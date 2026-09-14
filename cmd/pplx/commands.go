@@ -255,7 +255,3 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "..."
 }
-
-func cmdSpec(args []string) error {
-	return errors.New("spec subcommands (show|sync|check) land in the next step")
-}

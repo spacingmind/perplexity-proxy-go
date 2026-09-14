@@ -204,3 +204,34 @@ func homeDir() string {
 	}
 	return "."
 }
+
+// Get returns the endpoint path for a spec key, or "" when unknown.
+func (e Endpoints) Get(key string) string {
+	switch key {
+	case "ask":
+		return e.Ask
+	case "search_init":
+		return e.SearchInit
+	case "upload":
+		return e.Upload
+	case "rate_limits":
+		return e.RateLimits
+	case "user_settings":
+		return e.UserSettings
+	case "list_threads":
+		return e.ListThreads
+	case "thread_detail":
+		return e.ThreadDetail
+	case "credits":
+		return e.Credits
+	case "auth_csrf":
+		return e.AuthCSRF
+	case "auth_otp_redirect":
+		return e.AuthOTPRedirect
+	case "auth_signin_email":
+		return e.AuthSigninEmail
+	case "auth_totp_verify":
+		return e.AuthTOTPVerify
+	}
+	return ""
+}

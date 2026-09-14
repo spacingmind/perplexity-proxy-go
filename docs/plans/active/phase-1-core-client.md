@@ -80,12 +80,66 @@ không logic). Client (`internal/pplx`) đọc mọi thứ qua spec, không hard
 
 ## Progress
 
-- [ ] Phase 1 skeleton + spec embedded
-- [ ] Auth login
-- [ ] Ask + SSE
-- [ ] Usage + spec sync/check
-- [ ] Test suite xanh
+- [x] Phase 1 skeleton + spec embedded (commit 193694b)
+- [x] Auth login (df13369)
+- [x] Ask + SSE (13b5127)
+- [x] Usage + spec sync/check (b29a81a, this commit)
+- [x] Test suite xanh (39 tests, 4 packages)
 
 ## Validation
 
-(điền khi hoàn thành: kết quả từng acceptance criterion)
+1. **`pplx login`** — PASS. Email+OTP two-phase flow (`RequestCode` ->
+   `CompleteLogin`), TOTP challenge handled with re-prompt; saves
+   `~/.pplx/token.json` (0700/0600) with `expires_at` ~30d; `Load` fails
+   with `ErrNoToken`/`ErrTokenExpired`. Tests: `TestLogin_OTPFlow`,
+   `TestLogin_TOTPRequired`, `TestLogin_BadCode`, `TestCLI_LoginFlow`.
+2. **`pplx ask "query" [-m] [-s]`** — PASS. Answer + numbered Sources list;
+   `--no-citations`; trailing flags after the query parsed in a second
+   pass. Tests: `TestAsk_StreamsAnswer`, `TestAsk_AnswerFieldShape`,
+   `TestCLI_AskPrintsCitations`, `TestCLI_AskNoCitations`.
+3. **`pplx usage`** — PASS. Four buckets + capped sources, unlimited
+   omitted. Tests: `TestUsage_ParsesRateLimits`, `TestCLI_Usage`.
+4. **`pplx spec show|sync|check`** — PASS. show prints effective spec +
+   applied-override header; sync fetches upstream constants.py/models.py,
+   regex-parses `Final[str]`/`Model(...)`, diffs, confirm-before-write
+   (`--yes` skips), merges into existing overrides (only changed keys
+   persisted); check dry-run prints the 3-step plan with no network,
+   `--live` smoke tests rate-limits -> ask -> thread-list with
+   PASS/FAIL + HTTP status. Tests: `TestSpecSync_DetectsVersionBump`
+   (2.19 bump + moved endpoint; written on --yes, not on decline),
+   `TestSpecSync_NoDrift`, `TestSpecShow`, `TestSpecCheck_DryRunNoNetwork`.
+5. **Defensive SSE parse** — PASS. All frames -> `map[string]any`,
+   type-guarded extraction, unknown fields/events/wrong types/non-JSON
+   skipped without panic; both `{text: json}` and `{blocks}` shapes.
+   Tests: `TestAsk_IgnoresUnknownFields` + hostile fixture in
+   `TestAsk_StreamsAnswer`.
+6. **utls transport behind interface** — PASS.
+   `transport.Client` interface with `NewPlain` (tests) / `NewUTLS`
+   (Chrome ClientHello, h2 via ForceAttemptHTTP2) implementations;
+   CLI reaches it through the `newTransport` seam. Tests:
+   `TestInterfaceSatisfied` + 10 transport tests (headers, cookies,
+   chunked cookies, SSE, redirects).
+7. **Tooling** — PASS. `gofmt -l .` empty, `go vet ./...` clean,
+   `go test ./...` ok (39 tests: spec 6, transport 11, pplx 12, cli 12 —
+   minus one shared helper, 39 named). No network in tests: every HTTP
+   interaction goes through httptest servers; `spec check --live` is
+   opt-in and its default mode asserts zero network calls.
+
+**Named test scenarios all present:** TestLogin_OTPFlow, TestAsk_StreamsAnswer,
+TestAsk_IgnoresUnknownFields, TestSpec_OverridesPrecedence,
+TestSpecSync_DetectsVersionBump, TestUsage_ParsesRateLimits,
+TestFollowup_SendsBackendUUID.
+
+### Deviations from plan
+
+- CLI is stdlib-only (no cobra) — flag parsing with a second pass for
+  flags-after-query; per plan's "minimal arg parsing" allowance.
+- `.gitignore` `pplx` pattern anchored to `/pplx` — the bare pattern was
+  silently ignoring the `internal/pplx/` package directory.
+- Dependency set: `refraction-networking/utls` (+ its transitive deps)
+  only; stdlib covers HTTP/2, JSON, regex, SSE scanning. `x/net/http2`
+  was evaluated then dropped in favour of stdlib ForceAttemptHTTP2.
+- Token path overridable via `PPLX_TOKEN_PATH` (test seam, also handy
+  for users).
+- SSE `chunks` accumulate by join (matches reference `_update_state`);
+  later `answer` fields win over earlier chunk-derived text.
