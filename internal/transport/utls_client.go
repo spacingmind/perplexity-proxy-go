@@ -9,7 +9,6 @@ import (
 	"net/url"
 
 	utls "github.com/refraction-networking/utls"
-	"golang.org/x/net/http2"
 )
 
 // NewUTLS returns a Client whose TLS handshake presents a Chrome ClientHello
@@ -52,9 +51,9 @@ func (t *utlsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		return nil, fmt.Errorf("unexpected connection type %T", conn)
 	}
 	if uconn.ConnectionState().NegotiatedProtocol == "h2" {
-		t2 := &http2.Transport{DialTLSContext: func(context.Context, string, string, *tls.Config) (net.Conn, error) {
+		t2 := newChromeH2Transport(func(context.Context, string, string, *tls.Config) (net.Conn, error) {
 			return conn, nil
-		}}
+		})
 		return t2.RoundTrip(req)
 	}
 	t1 := &http.Transport{DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
