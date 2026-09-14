@@ -143,3 +143,67 @@ TestFollowup_SendsBackendUUID.
   for users).
 - SSE `chunks` accumulate by join (matches reference `_update_state`);
   later `answer` fields win over earlier chunk-derived text.
+
+## Review (adversarial)
+
+Six-pass adversarial review against `refs/perplexity-web-mcp` (protocol
+fidelity, state, security, edge cases). 12 commits; `gofmt`/`go vet`/
+`go test ./...` green throughout.
+
+### Fixes
+
+1. **auth: TOTP retry re-consumed the OTP** (3091b0a) — `CompleteLogin`
+   re-ran the otp-redirect exchange with the already-consumed code;
+   interactive TOTP login could never succeed. Now resumes at
+   `verifyTOTP` with the remembered challenge token.
+2. **ask: `search_recency_filter` sent `""` not `null`** (82d9319) —
+   reference sends `time_range.value or None`.
+3. **ask: init-search truncation split UTF-8 runes** (1f60b5e) —
+   `query[:500]` is bytes; reference slices characters.
+4. **sse: `RESEARCH_CLARIFYING_QUESTIONS` silently dropped** (567253b) —
+   deep-research clarifying responses rendered as "(no answer
+   returned)". Now a `ClarifyingQuestionsError` the CLI prints.
+5. **jar: signed/non-digit chunk suffixes joined the token** (d120fff) —
+   `strconv.Atoi` accepts `-1`/`+1`; reference filters `isdigit`.
+6. **sse: `final:true` didn't end the stream** (67cee6f) — a server
+   holding the body open after the final frame froze the CLI for the
+   5-minute timeout. PostSSE now stops cleanly on the final frame.
+7. **auth: TOTP verify followed redirects + required JSON** (76fa878) —
+   reference allows 3xx Location *or* 2xx `{redirect}`; added
+   `PostJSONNoRedirect`.
+8. **spec show: endpoint overrides unreported** (20c22d8) — header
+   claimed "none (embedded spec)" right after a sync wrote
+   `endpoints.*`; now diffs all 12 endpoint keys.
+9. **jar: session cookie had no host scoping** (48f7813) — redirects or
+   user-supplied absolute URLs carried the session cookie to any host;
+   session-theft class bug. Jar is now host-scoped (RFC 6265).
+10. **spec sync: no fetch timeout** (698f11b) — `http.DefaultClient`
+    could stall `spec sync` forever; 30s bound.
+11. **transport: unbounded SSE line buffer** (3c0a2fa) — hostile stream
+    allocated without limit; capped at 16MB (legit frames far below).
+12. **test quality pass** (ae07042, d4768d8) — coverage for chunk
+    deletion mid-session, citation markers with zero results,
+    answer-beats-chunks, token expiry boundary, spec round-trip guard;
+    removed dead `sawFinal`.
+
+### Documented RISKs (accepted, not fixed)
+
+- **FINAL JSON-object answer strings** (`JSON_OBJECT_PATTERN`): reference
+  re-parses a `{"answer": "{...}"}` string; Go keeps it literal. Only
+  affects structured-output mode the CLI doesn't expose.
+- **`timezone` always a string** — reference default `null`; Go sends
+  IANA name ("UTC" fallback for abbreviations). Deliberate upgrade.
+- **Chunk-index gaps** not validated (0,1,3 joins silently) — matches
+  reference behavior.
+- **Strict JSON decode** on csrf/otp-redirect/signin responses (2xx
+  non-JSON would error); these endpoints reliably return JSON. TOTP
+  endpoint is now tolerant.
+- **Explicit `""` in the overrides file** is applied (blanks the field),
+  unlike env vars where empty is ignored — file is deliberate user
+  input.
+- **`spec check --live`** has no automated test (needs a full-stack
+  mock); dry-run path is covered.
+
+### Test tally after review
+
+49 tests across 4 packages; no network in tests.
