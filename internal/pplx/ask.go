@@ -54,9 +54,10 @@ func (c *Conversation) buildPayload(query string, opt AskOptions) map[string]any
 	if sourceFocus == "" {
 		sourceFocus = d.SourceFocus
 	}
-	recency := d.SearchRecencyFilter
-	if recency == "" {
-		recency = ""
+	// Reference sends time_range.value or None -> null when unset.
+	var recency any
+	if d.SearchRecencyFilter != "" {
+		recency = d.SearchRecencyFilter
 	}
 
 	params := map[string]any{
