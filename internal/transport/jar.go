@@ -64,10 +64,13 @@ func (j *cookieJar) get(u *url.URL, name string) string {
 		if !strings.HasPrefix(k, prefix) {
 			continue
 		}
-		idx, err := strconv.Atoi(strings.TrimPrefix(k, prefix))
-		if err != nil {
+		// Match the reference's str.isdigit(): signed ("-1", "+1") or
+		// non-numeric suffixes are not chunk cookies.
+		suffix := strings.TrimPrefix(k, prefix)
+		if !isDigits(suffix) {
 			continue
 		}
+		idx, _ := strconv.Atoi(suffix)
 		chunks = append(chunks, chunk{idx, v})
 	}
 	if chunks == nil {
@@ -79,4 +82,16 @@ func (j *cookieJar) get(u *url.URL, name string) string {
 		b.WriteString(c.val)
 	}
 	return b.String()
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

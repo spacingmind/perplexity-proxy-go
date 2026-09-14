@@ -151,6 +151,9 @@ func TestCookie_ChunkedReassembly(t *testing.T) {
 		http.SetCookie(w, &http.Cookie{Name: "session.1", Value: "BBB", Path: "/"})
 		http.SetCookie(w, &http.Cookie{Name: "session.10", Value: "CCC", Path: "/"})
 		http.SetCookie(w, &http.Cookie{Name: "session.2", Value: "DDD", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "session.-1", Value: "EVIL", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "session.+3", Value: "EVIL", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "session.x", Value: "EVIL", Path: "/"})
 	}))
 	defer srv.Close()
 
