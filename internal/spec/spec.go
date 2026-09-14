@@ -45,6 +45,7 @@ type Headers struct {
 }
 
 type Defaults struct {
+	Model                   string `json:"model"`
 	PromptSource            string `json:"prompt_source"`
 	SendBackTextInStreaming bool   `json:"send_back_text_in_streaming_api"`
 	UseSchematizedAPI       bool   `json:"use_schematized_api"`

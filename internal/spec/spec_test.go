@@ -129,16 +129,19 @@ func TestSpec_ModelLookup(t *testing.T) {
 	if m.Identifier != "glm_5_2" {
 		t.Errorf("Model(glm).Identifier = %q", m.Identifier)
 	}
-	if m := s.Model("auto"); m.Mode != "concise" {
-		t.Errorf("Model(auto).Mode = %q, want concise", m.Mode)
+	if m := s.Model("experimental"); m.Mode != "concise" {
+		t.Errorf("Model(experimental).Mode = %q, want concise (auto was dropped)", m.Mode)
 	}
 	// lookup by identifier
-	if m := s.Model("experimental"); m.Name != "experimental" {
-		t.Errorf("Model(experimental).Name = %q", m.Name)
+	if m := s.Model("glm_5_2"); m.Name != "glm" {
+		t.Errorf("Model(glm_5_2).Name = %q", m.Name)
 	}
-	// unknown falls back to best
+	// unknown and empty fall back to best (the new default)
 	if m := s.Model("nope"); m.Identifier != "pplx_pro" {
 		t.Errorf("Model(nope).Identifier = %q, want pplx_pro fallback", m.Identifier)
+	}
+	if m := s.Model(""); m.Identifier != "pplx_pro" {
+		t.Errorf(`Model("").Identifier = %q, want pplx_pro default`, m.Identifier)
 	}
 }
 
