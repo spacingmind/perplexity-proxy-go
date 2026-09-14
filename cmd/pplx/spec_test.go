@@ -233,3 +233,37 @@ func runCapture(t *testing.T, args []string) (string, error) {
 	err := run(args)
 	return b.String(), err
 }
+
+func TestSpecShow_ReportsEndpointOverride(t *testing.T) {
+	// A partial override touching only an endpoint (the shape `spec sync`
+	// writes) must be reflected in the header, not reported as "none".
+	orig := spec.OverridesFile
+	spec.OverridesFile = filepath.Join(t.TempDir(), "none.json")
+	t.Cleanup(func() { spec.OverridesFile = orig })
+
+	sp, err := spec.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(overrideSources(sp), ", "), "none") {
+		t.Fatal("precondition: no overrides expected")
+	}
+
+	path := filepath.Join(t.TempDir(), "ov.json")
+	if err := os.WriteFile(path, []byte(`{"endpoints":{"search_init":"/search/new/v2"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec.OverridesFile = path
+
+	sp, err = spec.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcs := strings.Join(overrideSources(sp), ", ")
+	if !strings.Contains(srcs, "endpoints.search_init") {
+		t.Errorf("override sources = %q, want endpoints.search_init listed", srcs)
+	}
+	if strings.Contains(srcs, "none (embedded spec)") {
+		t.Errorf("override sources = %q, must not claim none", srcs)
+	}
+}

@@ -68,7 +68,7 @@ func cmdSpecShow(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "# overrides applied: %s\n", strings.Join(overrideSources(), ", "))
+	fmt.Fprintf(stdout, "# overrides applied: %s\n", strings.Join(overrideSources(sp), ", "))
 	data, err := json.MarshalIndent(sp, "", "  ")
 	if err != nil {
 		return err
@@ -79,12 +79,8 @@ func cmdSpecShow(args []string) error {
 
 // overrideSources reports which override layers actually changed the
 // effective spec, for the `spec show` header.
-func overrideSources() []string {
+func overrideSources(eff *spec.Spec) []string {
 	var out []string
-	eff, err := spec.Load()
-	if err != nil {
-		return []string{"unknown (spec load failed)"}
-	}
 	var base spec.Spec
 	if err := json.Unmarshal(eff.Raw, &base); err == nil {
 		var keys []string
@@ -96,6 +92,15 @@ func overrideSources() []string {
 		}
 		if base.SessionCookieName != eff.SessionCookieName {
 			keys = append(keys, "session_cookie_name")
+		}
+		for _, k := range []string{
+			"ask", "search_init", "upload", "rate_limits", "user_settings",
+			"list_threads", "thread_detail", "credits", "auth_csrf",
+			"auth_otp_redirect", "auth_signin_email", "auth_totp_verify",
+		} {
+			if base.Endpoints.Get(k) != eff.Endpoints.Get(k) {
+				keys = append(keys, "endpoints."+k)
+			}
 		}
 		if keys != nil {
 			out = append(out, fmt.Sprintf("file/env (%s)", strings.Join(keys, ", ")))
