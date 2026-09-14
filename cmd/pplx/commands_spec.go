@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spacingmind/perplexity-proxy-go/internal/pplx"
 	"github.com/spacingmind/perplexity-proxy-go/internal/spec"
@@ -22,13 +23,17 @@ import (
 // at an httptest server.
 var syncSourceURLs = spec.SyncSourceURLs
 
+// fetchClient serves spec sync fetches; 30s timeout so a hung upstream
+// cannot stall the CLI indefinitely.
+var fetchClient = &http.Client{Timeout: 30 * time.Second}
+
 // fetchUpstream GETs a sync source (production: raw.githubusercontent.com).
 var fetchUpstream = func(ctx context.Context, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fetchClient.Do(req)
 	if err != nil {
 		return "", err
 	}
