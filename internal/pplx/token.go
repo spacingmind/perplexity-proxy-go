@@ -42,8 +42,11 @@ func NewTokenStore(path string) *TokenStore {
 	return &TokenStore{path: path}
 }
 
-// DefaultTokenPath is ~/.pplx/token.json.
+// DefaultTokenPath is ~/.pplx/token.json (or $PPLX_TOKEN_PATH when set).
 func DefaultTokenPath() (string, error) {
+	if p := os.Getenv("PPLX_TOKEN_PATH"); p != "" {
+		return p, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
