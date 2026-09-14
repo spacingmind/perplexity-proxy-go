@@ -54,7 +54,6 @@ type convState struct {
 	answer         string
 	chunks         []string
 	citations      []Citation
-	sawFinal       bool
 }
 
 // Citation is one web result cited by [n] markers in the answer text.
@@ -81,7 +80,6 @@ func (s *convState) processData(d map[string]any) error {
 		s.title = v
 	}
 	if v, ok := d["final"].(bool); ok && v {
-		s.sawFinal = true
 		// Reference breaks out of the stream on final; returning the stop
 		// sentinel ends the read so a kept-open connection cannot hang.
 		return errStopStream

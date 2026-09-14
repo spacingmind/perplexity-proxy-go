@@ -357,3 +357,37 @@ func TestCookieJar_HostScoped(t *testing.T) {
 		t.Fatal("session cookie leaked via absolute URL request")
 	}
 }
+
+func TestCookie_ChunkDeletionMidSession(t *testing.T) {
+	// Server sets chunked cookie, then deletes chunk 1 (MaxAge<0);
+	// reassembly must reflect the deletion, not resurrect stale chunks.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/set":
+			http.SetCookie(w, &http.Cookie{Name: "session.0", Value: "AAA"})
+			http.SetCookie(w, &http.Cookie{Name: "session.1", Value: "BBB"})
+		case "/delete":
+			http.SetCookie(w, &http.Cookie{Name: "session.1", Value: "", MaxAge: -1})
+			http.SetCookie(w, &http.Cookie{Name: "session.0", Value: "AAA"})
+		}
+	}))
+	defer srv.Close()
+
+	c, err := NewPlain(testOptions(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := c.Get(ctx, "/set"); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Cookie("session"); got != "AAABBB" {
+		t.Fatalf("before delete = %q, want AAABBB", got)
+	}
+	if err := c.Get(ctx, "/delete"); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Cookie("session"); got != "AAA" {
+		t.Fatalf("after delete = %q, want AAA (chunk 1 removed)", got)
+	}
+}

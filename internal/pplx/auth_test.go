@@ -332,3 +332,27 @@ func TestLogin_TOTPVerifyViaRedirect(t *testing.T) {
 		t.Fatalf("cookie = %q, want tok-3xx", got)
 	}
 }
+
+func TestTokenStore_ExpiryBoundary(t *testing.T) {
+	dir := t.TempDir()
+	store := NewTokenStore(filepath.Join(dir, "token.json"))
+	// ExpiresAt exactly now: Fresh requires now.Before(ExpiresAt), so this
+	// token must be considered expired.
+	tok := &Token{Value: "x", ObtainedAt: time.Now().Add(-time.Hour), ExpiresAt: time.Now()}
+	data, _ := json.Marshal(tok)
+	if err := os.WriteFile(store.path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load(); err != ErrTokenExpired {
+		t.Errorf("boundary expiry: err = %v, want ErrTokenExpired", err)
+	}
+	// One second later than now: fresh.
+	tok2 := &Token{Value: "x", ObtainedAt: time.Now().Add(-time.Hour), ExpiresAt: time.Now().Add(time.Second)}
+	data2, _ := json.Marshal(tok2)
+	if err := os.WriteFile(store.path, data2, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load(); err != nil {
+		t.Errorf("just-fresh token: err = %v", err)
+	}
+}

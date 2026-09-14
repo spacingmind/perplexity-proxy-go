@@ -345,3 +345,39 @@ func TestAsk_FinalTerminatesHeldOpenStream(t *testing.T) {
 		t.Fatal("Ask did not return after final frame; stream read is blocked")
 	}
 }
+
+func TestAsk_CitationMarkersWithoutResults(t *testing.T) {
+	// Out-of-range/zero-result citations: text keeps its [n] markers and
+	// the answer is still returned (reference leaves the text alone when
+	// there is no matching search result).
+	inner, _ := json.Marshal(map[string]any{"answer": "See [1] and [99]."})
+	outer, _ := json.Marshal(map[string]any{"text": string(inner)})
+	sse := "data: " + string(outer) + "\ndata: {\"final\":true}\n"
+	_, conv := askTestSetup(t, sse)
+	ans, err := conv.Ask(context.Background(), "q", AskOptions{})
+	if err != nil {
+		t.Fatalf("Ask: %v", err)
+	}
+	if ans.Text != "See [1] and [99]." {
+		t.Errorf("Text = %q, want markers preserved", ans.Text)
+	}
+	if len(ans.Citations) != 0 {
+		t.Errorf("Citations = %+v, want none", ans.Citations)
+	}
+}
+
+func TestAsk_AnswerBeatsEarlierChunks(t *testing.T) {
+	// Later frame carrying a full answer must replace earlier chunk-derived
+	// text (reference _update_state: answer overwrites, chunks append).
+	chunkFrame, _ := json.Marshal(map[string]any{"text": `{"chunks":["partial "]}`})
+	ansFrame, _ := json.Marshal(map[string]any{"text": `{"answer":"complete answer"}`})
+	sse := "data: " + string(chunkFrame) + "\ndata: " + string(ansFrame) + "\ndata: {\"final\":true}\n"
+	_, conv := askTestSetup(t, sse)
+	ans, err := conv.Ask(context.Background(), "q", AskOptions{})
+	if err != nil {
+		t.Fatalf("Ask: %v", err)
+	}
+	if ans.Text != "complete answer" {
+		t.Errorf("Text = %q, want complete answer", ans.Text)
+	}
+}
