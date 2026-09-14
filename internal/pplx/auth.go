@@ -24,9 +24,10 @@ var (
 //	a.RequestCode(ctx, email)        // sends the numeric code by email
 //	a.CompleteLogin(ctx, email, otp) // exchanges the code for a session token
 type Auth struct {
-	t    transport.Client
-	sp   *spec.Spec
-	csrf string
+	t           transport.Client
+	sp          *spec.Spec
+	csrf        string
+	pendingTOTP string // challenge token from a prior callback, awaiting a code
 }
 
 func NewAuth(t transport.Client, sp *spec.Spec) *Auth {
@@ -91,14 +92,20 @@ func (a *Auth) CompleteLogin(ctx context.Context, email, codeOrLink, totpCode st
 		a.csrf = csrf
 	}
 
-	redirectURL, err := a.resolveCode(ctx, email, codeOrLink)
-	if err != nil {
+	// A pending TOTP challenge means the OTP was already consumed; retrying
+	// the otp-redirect exchange would fail. Resume at verifyTOTP instead,
+	// like the reference's retry loop.
+	if a.pendingTOTP == "" {
+		redirectURL, err := a.resolveCode(ctx, email, codeOrLink)
+		if err != nil {
+			return "", err
+		}
+		if err := a.followCallback(ctx, redirectURL, totpCode); err != nil {
+			return "", err
+		}
+	} else if err := a.verifyTOTP(ctx, a.pendingTOTP, totpCode); err != nil {
 		return "", err
 	}
-	if err := a.followCallback(ctx, redirectURL, totpCode); err != nil {
-		return "", err
-	}
-
 	token := a.t.Cookie(a.sp.SessionCookieName)
 	if token == "" {
 		return "", errors.New("authentication completed but no session token cookie was returned")
@@ -155,6 +162,11 @@ func (a *Auth) followCallback(ctx context.Context, redirectURL string, totpCode 
 		if err != nil {
 			return err
 		}
+		if totpCode == "" {
+			a.pendingTOTP = challengeToken
+			return ErrTOTPRequired
+		}
+		a.pendingTOTP = ""
 		return a.verifyTOTP(ctx, challengeToken, totpCode)
 	}
 
@@ -163,9 +175,6 @@ func (a *Auth) followCallback(ctx context.Context, redirectURL string, totpCode 
 
 // verifyTOTP completes a TOTP challenge and follows its post-verify redirect.
 func (a *Auth) verifyTOTP(ctx context.Context, challengeToken, totpCode string) error {
-	if totpCode == "" {
-		return ErrTOTPRequired
-	}
 	if len(totpCode) != 6 {
 		return errors.New("TOTP code must be a 6-digit number")
 	}

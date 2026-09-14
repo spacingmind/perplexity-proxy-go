@@ -226,6 +226,14 @@ func TestLogin_TOTPRequired(t *testing.T) {
 	if ts.totpCalls != 1 {
 		t.Errorf("totp calls = %d, want 1", ts.totpCalls)
 	}
+	// The OTP was consumed by the first callback; the retry must resume at
+	// TOTP verification instead of re-exchanging the code.
+	if ts.otpRedirectCalls != 1 {
+		t.Errorf("otp-redirect calls = %d, want 1 (OTP must not be re-exchanged)", ts.otpRedirectCalls)
+	}
+	if ts.callbackCalls != 1 {
+		t.Errorf("callback calls = %d, want 1", ts.callbackCalls)
+	}
 	if ts.lastTOTPBody["token"] != "challenge-tok" {
 		t.Errorf("totp body token = %v", ts.lastTOTPBody["token"])
 	}
