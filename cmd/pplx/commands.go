@@ -230,8 +230,11 @@ func printUsage(w io.Writer, rl *pplx.RateLimits) {
 
 // friendlyErr turns client failures into actionable messages.
 func friendlyErr(err error) error {
+	var clarifying *pplx.ClarifyingQuestionsError
 	var se *transport.StatusError
 	switch {
+	case errors.As(err, &clarifying):
+		return clarifying
 	case errors.Is(err, pplx.ErrRateLimited):
 		return fmt.Errorf("rate limited by Perplexity — wait for the quota to reset or upgrade your plan")
 	case errors.Is(err, pplx.ErrTOTPRequired):

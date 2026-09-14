@@ -3,6 +3,7 @@ package pplx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -271,5 +272,25 @@ func TestUsage_ParsesRateLimits(t *testing.T) {
 	}
 	if len(rl.ModelSpecificLimits) != 1 {
 		t.Errorf("model limits = %v", rl.ModelSpecificLimits)
+	}
+}
+
+func TestAsk_ClarifyingQuestions(t *testing.T) {
+	steps := []any{map[string]any{
+		"step_type": "RESEARCH_CLARIFYING_QUESTIONS",
+		"content":   map[string]any{"questions": []string{"Which aspect?", "What scope?"}},
+	}}
+	inner, _ := json.Marshal(steps)
+	outer, _ := json.Marshal(map[string]any{"text": string(inner)})
+	sse := "data: " + string(outer) + "\n" + "data: {\"final\":true}\n"
+
+	_, conv := askTestSetup(t, sse)
+	_, err := conv.Ask(context.Background(), "q", AskOptions{})
+	var cq *ClarifyingQuestionsError
+	if !errors.As(err, &cq) {
+		t.Fatalf("err = %v, want ClarifyingQuestionsError", err)
+	}
+	if len(cq.Questions) != 2 || cq.Questions[0] != "Which aspect?" || cq.Questions[1] != "What scope?" {
+		t.Fatalf("questions = %v", cq.Questions)
 	}
 }

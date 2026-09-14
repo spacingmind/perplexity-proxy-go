@@ -10,6 +10,16 @@ import (
 // ErrRateLimited is returned when the stream carries a rate-limit error code.
 var ErrRateLimited = errors.New("Perplexity rate limit reached (FREE_TIER_RATE_LIMITED)")
 
+// ClarifyingQuestionsError is returned when the model asks clarifying
+// questions instead of an answer (RESEARCH_CLARIFYING_QUESTIONS step).
+type ClarifyingQuestionsError struct {
+	Questions []string
+}
+
+func (e *ClarifyingQuestionsError) Error() string {
+	return "Perplexity returned clarifying questions: " + strings.Join(e.Questions, " | ")
+}
+
 // sseData parses one SSE line ("data: {...}") into a generic map.
 // Lines that are not data frames or that fail to parse are ignored — the
 // stream may contain comments, keepalives, and unknown frames we must skip.
@@ -94,6 +104,9 @@ func (s *convState) absorbText(text string) error {
 			step, ok := item.(map[string]any)
 			if !ok {
 				continue
+			}
+			if st, _ := step["step_type"].(string); st == "RESEARCH_CLARIFYING_QUESTIONS" {
+				return &ClarifyingQuestionsError{Questions: extractClarifyingQuestions(step["content"])}
 			}
 			if st, _ := step["step_type"].(string); st == "FINAL" {
 				content, _ := step["content"].(map[string]any)
@@ -187,4 +200,42 @@ func (s *convState) absorbBlocks(blocks []any) {
 func stringOr(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// extractClarifyingQuestions mirrors the reference _extract_clarifying_questions.
+func extractClarifyingQuestions(content any) []string {
+	var questions []string
+	switch c := content.(type) {
+	case map[string]any:
+		if raw, ok := c["questions"].([]any); ok {
+			for _, q := range raw {
+				if s := stringOr(q); s != "" {
+					questions = append(questions, s)
+				}
+			}
+		} else if raw, ok := c["clarifying_questions"].([]any); ok {
+			for _, q := range raw {
+				if s := stringOr(q); s != "" {
+					questions = append(questions, s)
+				}
+			}
+		} else {
+			for _, v := range c {
+				if s, ok := v.(string); ok && strings.Contains(s, "?") {
+					questions = append(questions, s)
+				}
+			}
+		}
+	case []any:
+		for _, q := range c {
+			if s := stringOr(q); s != "" {
+				questions = append(questions, s)
+			}
+		}
+	case string:
+		if c != "" {
+			questions = append(questions, c)
+		}
+	}
+	return questions
 }
