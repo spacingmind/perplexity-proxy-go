@@ -38,6 +38,8 @@ func run(args []string) error {
 		return cmdLogin(rest)
 	case "ask":
 		return cmdAsk(rest)
+	case "dump":
+		return cmdDump(args[1:])
 	case "usage":
 		return cmdUsage(rest)
 	case "spec":

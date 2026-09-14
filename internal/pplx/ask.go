@@ -142,3 +142,20 @@ func currentTimezone() string {
 	}
 	return name
 }
+
+// AskRaw streams the ask SSE and hands every raw line to onLine, without any
+// parsing. Live-debug tooling only.
+func (c *Conversation) AskRaw(ctx context.Context, query string, opt AskOptions, onLine func([]byte)) error {
+	payload := c.buildPayload(query, opt)
+	searchQuery := query
+	if runes := []rune(query); len(runes) > 500 {
+		searchQuery = string(runes[:500])
+	}
+	if err := c.t.Get(ctx, fmt.Sprintf("%s?q=%s", c.sp.Endpoints.SearchInit, url.QueryEscape(searchQuery))); err != nil {
+		return fmt.Errorf("init search: %w", err)
+	}
+	return c.t.PostSSE(ctx, c.sp.Endpoints.Ask, payload, func(line []byte) error {
+		onLine(line)
+		return nil
+	})
+}

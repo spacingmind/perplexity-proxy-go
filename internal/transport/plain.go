@@ -252,16 +252,25 @@ func (c *shared) minimalHeaders() map[string]string {
 	}
 }
 
-// appHeaders are the full headers for JSON/SSE API requests.
+// appHeaders are the full headers for JSON/SSE API requests, mirroring the
+// set curl_cffi sends when impersonating Chrome (fraud detection on the ask
+// endpoint checks for the browser security headers).
 func (c *shared) appHeaders() map[string]string {
 	return map[string]string{
-		"User-Agent":       c.opt.UserAgent,
-		"Referer":          c.baseURL.String() + "/",
-		"Origin":           c.baseURL.String(),
-		"Accept":           c.opt.Accept,
-		"Content-Type":     c.opt.ContentType,
-		"x-app-apiclient":  c.opt.AppAPIClient,
-		"x-app-apiversion": c.opt.APIVersion,
+		"User-Agent":         c.opt.UserAgent,
+		"Referer":            c.baseURL.String() + "/",
+		"Origin":             c.baseURL.String(),
+		"Accept":             c.opt.Accept,
+		"Accept-Language":    "en-US,en;q=0.9",
+		"Content-Type":       c.opt.ContentType,
+		"sec-ch-ua":          "Not)A;brand=\"8\"; Chromium=\"138\", \"Not?A_Brand\";v=\"99\", \"Google Chrome\";v=\"138\"",
+		"sec-ch-ua-mobile":   "?0",
+		"sec-ch-ua-platform": "Windows",
+		"sec-fetch-dest":     "empty",
+		"sec-fetch-mode":     "cors",
+		"sec-fetch-site":     "same-origin",
+		"x-app-apiclient":    c.opt.AppAPIClient,
+		"x-app-apiversion":   c.opt.APIVersion,
 	}
 }
 
