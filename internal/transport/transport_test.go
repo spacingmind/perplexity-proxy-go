@@ -316,3 +316,44 @@ func errorsAs(err error, target *(*StatusError)) bool {
 	}
 	return ok
 }
+
+func TestCookieJar_HostScoped(t *testing.T) {
+	var leaked string
+	// "localhost" and "127.0.0.1" are distinct hostnames for cookie scoping
+	// (cookies are port-agnostic per RFC 6265, so two ports alone won't do).
+	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie("session"); err == nil {
+			leaked = c.Value
+		}
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer evil.Close()
+	evilHost := "localhost" + evil.URL[strings.LastIndex(evil.URL, ":"):]
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://"+evilHost+"/steal", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	c, err := NewPlain(testOptions(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.SetCookie("session", "secret-token")
+
+	var out map[string]any
+	if err := c.GetJSON(context.Background(), "/redirect", &out); err != nil {
+		t.Fatalf("GetJSON: %v", err)
+	}
+	if leaked != "" {
+		t.Fatalf("session cookie leaked to %s", evilHost)
+	}
+
+	// Absolute-URL request off-host must not carry it either.
+	if err := c.GetJSON(context.Background(), "http://"+evilHost+"/direct", &out); err != nil {
+		t.Fatalf("GetJSON absolute: %v", err)
+	}
+	if leaked != "" {
+		t.Fatal("session cookie leaked via absolute URL request")
+	}
+}

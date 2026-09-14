@@ -10,14 +10,22 @@ import (
 )
 
 // cookieJar is a minimal in-memory jar that keeps the Perplexity session
-// semantics the reference client needs: host-only cookies plus reassembly of
-// chunked cookies (__Secure-next-auth.session-token.0, .1, ... joined in
-// numeric order). http.CookieJar's interface has no way to read values back,
-// so internal/transport uses this jar directly.
+// semantics the reference client needs: host-only cookies (never sent to
+// another host, even when a redirect or user-supplied absolute URL points
+// there) plus reassembly of chunked cookies
+// (__Secure-next-auth.session-token.0, .1, ... joined in numeric order).
+// http.CookieJar's interface has no way to read values back, so
+// internal/transport uses this jar directly.
 type cookieJar struct {
 	mu      sync.Mutex
 	host    string
 	cookies map[string]string
+}
+
+// forHost reports whether u belongs to the jar's host. Cookies are
+// host-scoped and port-agnostic, per RFC 6265.
+func (j *cookieJar) forHost(u *url.URL) bool {
+	return u != nil && u.Hostname() == j.host
 }
 
 func newCookieJar(host string) *cookieJar {
@@ -25,6 +33,9 @@ func newCookieJar(host string) *cookieJar {
 }
 
 func (j *cookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	if !j.forHost(u) {
+		return
+	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	for _, c := range cookies {
@@ -37,6 +48,9 @@ func (j *cookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 }
 
 func (j *cookieJar) Cookies(u *url.URL) []*http.Cookie {
+	if !j.forHost(u) {
+		return nil
+	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	var out []*http.Cookie
