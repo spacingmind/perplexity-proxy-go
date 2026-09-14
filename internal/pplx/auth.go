@@ -187,17 +187,28 @@ func (a *Auth) verifyTOTP(ctx context.Context, challengeToken, totpCode string) 
 		Redirect string `json:"redirect"`
 	}
 	path := fmt.Sprintf("%s?version=%s&source=default", a.sp.Endpoints.AuthTOTPVerify, url.QueryEscape(a.sp.APIVersion))
-	if err := a.t.PostJSON(ctx, path, map[string]any{
+	// No-redirect POST like the reference: a 3xx Location is the redirect,
+	// otherwise the 2xx body carries {"redirect": "..."}.
+	status, location, err := a.t.PostJSONNoRedirect(ctx, path, map[string]any{
 		"token": challengeToken,
 		"code":  totpCode,
-	}, &out); err != nil {
+	}, &out)
+	if err != nil {
 		return fmt.Errorf("TOTP verify: %w", err)
 	}
-	if out.Error != "" {
-		return fmt.Errorf("TOTP verification failed: %s", out.Error)
+	if status >= 400 || out.Error != "" {
+		detail := out.Error
+		if detail == "" {
+			detail = fmt.Sprintf("HTTP %d", status)
+		}
+		return fmt.Errorf("TOTP verification failed: %s", detail)
 	}
-	if out.Redirect != "" {
-		return a.t.Get(ctx, relativeOrAbsolute(out.Redirect))
+	redirect := location
+	if redirect == "" {
+		redirect = out.Redirect
+	}
+	if redirect != "" {
+		return a.t.Get(ctx, relativeOrAbsolute(redirect))
 	}
 	return nil
 }

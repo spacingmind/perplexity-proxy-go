@@ -149,6 +149,35 @@ func (c *shared) PostJSON(ctx context.Context, path string, body, out any) error
 	return decodeBody(resp, out)
 }
 
+func (c *shared) PostJSONNoRedirect(ctx context.Context, path string, body, out any) (int, string, error) {
+	noRedirect := c.http.CheckRedirect
+	c.http.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defer func() { c.http.CheckRedirect = noRedirect }()
+
+	resp, err := c.post(ctx, path, body, c.appHeaders())
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	loc := resp.Header.Get("Location")
+	if u, err := resp.Location(); err == nil {
+		loc = u.String()
+	}
+	// 3xx is a valid outcome here (Location carries the result), so only
+	// 4xx/5xx are errors — unlike PostJSON.
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return resp.StatusCode, loc, &StatusError{StatusCode: resp.StatusCode, URL: resp.Request.URL.String(), Body: string(b)}
+	}
+	if out != nil {
+		// Tolerant: non-JSON bodies decode as no-op, like _response_json.
+		_ = json.NewDecoder(resp.Body).Decode(out)
+	}
+	return resp.StatusCode, loc, nil
+}
+
 func (c *shared) PostSSE(ctx context.Context, path string, body any, onLine func([]byte) error) error {
 	resp, err := c.post(ctx, path, body, c.appHeaders())
 	if err != nil {

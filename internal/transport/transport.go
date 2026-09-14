@@ -25,6 +25,11 @@ type Client interface {
 	// PostJSON performs a POST with full app headers and decodes a 200
 	// response body as JSON into out. out may be nil.
 	PostJSON(ctx context.Context, path string, body, out any) error
+	// PostJSONNoRedirect performs a POST without following redirects and
+	// returns the response status and Location header. A 2xx body is
+	// best-effort decoded into out (non-JSON bodies are tolerated, like
+	// the reference's _response_json). Used by the TOTP challenge flow.
+	PostJSONNoRedirect(ctx context.Context, path string, body, out any) (status int, location string, err error)
 	// PostSSE performs a POST with full app headers and invokes onLine for
 	// each line of the streamed response body. Returning an error from
 	// onLine aborts the stream and is returned to the caller.

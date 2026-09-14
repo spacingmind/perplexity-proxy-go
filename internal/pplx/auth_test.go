@@ -300,3 +300,35 @@ func TestTokenStore_MissingAndEmpty(t *testing.T) {
 		t.Errorf("empty token: err = %v, want ErrNoToken", err)
 	}
 }
+
+func TestLogin_TOTPVerifyViaRedirect(t *testing.T) {
+	// Reference allows the TOTP verify to answer 3xx + Location instead of
+	// 200 JSON; the redirect must be followed to collect the session cookie.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/totp-challenge/verify":
+			http.SetCookie(w, &http.Cookie{Name: "__Secure-next-auth.session-token", Value: "tok-3xx", Path: "/", Secure: true})
+			w.Header().Set("Location", "/?login-source=floatingSignup")
+			w.WriteHeader(http.StatusFound)
+		case "/":
+			fmt.Fprint(w, "<html></html>")
+		default:
+			http.Error(w, "nf", http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	c, err := transport.NewPlain(transport.Options{BaseURL: srv.URL, APIVersion: "2.18", Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp := spec.Spec{BaseURL: srv.URL, APIVersion: "2.18", SessionCookieName: "__Secure-next-auth.session-token"}
+	sp.Endpoints.AuthTOTPVerify = "/api/auth/totp-challenge/verify"
+	a := NewAuth(c, &sp)
+	if err := a.verifyTOTP(context.Background(), "challenge-tok", "123456"); err != nil {
+		t.Fatalf("verifyTOTP via 3xx: %v", err)
+	}
+	if got := c.Cookie("__Secure-next-auth.session-token"); got != "tok-3xx" {
+		t.Fatalf("cookie = %q, want tok-3xx", got)
+	}
+}
