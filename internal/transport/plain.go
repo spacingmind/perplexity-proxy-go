@@ -263,14 +263,20 @@ func (c *shared) appHeaders() map[string]string {
 		"Accept":             c.opt.Accept,
 		"Accept-Language":    "en-US,en;q=0.9",
 		"Content-Type":       c.opt.ContentType,
-		"sec-ch-ua":          "Not)A;brand=\"8\"; Chromium=\"138\", \"Not?A_Brand\";v=\"99\", \"Google Chrome\";v=\"138\"",
+		"sec-ch-ua":          "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"",
+		"Priority":           "u=0, i",
 		"sec-ch-ua-mobile":   "?0",
-		"sec-ch-ua-platform": "Windows",
-		"sec-fetch-dest":     "empty",
-		"sec-fetch-mode":     "cors",
-		"sec-fetch-site":     "same-origin",
-		"x-app-apiclient":    c.opt.AppAPIClient,
-		"x-app-apiversion":   c.opt.APIVersion,
+		"sec-ch-ua-platform": "\"Windows\"",
+		// curl_cffi keeps navigation-style sec-fetch headers on POST too —
+		// technically wrong for XHR, but it is exactly the wire shape the
+		// reference client presents and the server accepts, so mirror it.
+		"sec-fetch-dest":            "document",
+		"sec-fetch-mode":            "navigate",
+		"sec-fetch-site":            "none",
+		"sec-fetch-user":            "?1",
+		"Upgrade-Insecure-Requests": "1",
+		"x-app-apiclient":           c.opt.AppAPIClient,
+		"x-app-apiversion":          c.opt.APIVersion,
 	}
 }
 
@@ -365,4 +371,4 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("HTTP %d at %s", e.StatusCode, e.URL)
 }
 
-const defaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+const defaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
