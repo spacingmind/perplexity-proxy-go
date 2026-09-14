@@ -94,9 +94,11 @@ func (c *Conversation) buildPayload(query string, opt AskOptions) map[string]any
 func (c *Conversation) Ask(ctx context.Context, query string, opt AskOptions) (*Answer, error) {
 	payload := c.buildPayload(query, opt)
 
+	// Reference truncates to 500 characters; slice runes, not bytes, so a
+	// multi-byte query cannot be split mid-character.
 	searchQuery := query
-	if len(searchQuery) > 500 {
-		searchQuery = searchQuery[:500]
+	if runes := []rune(query); len(runes) > 500 {
+		searchQuery = string(runes[:500])
 	}
 	if err := c.t.Get(ctx, fmt.Sprintf("%s?q=%s", c.sp.Endpoints.SearchInit, url.QueryEscape(searchQuery))); err != nil {
 		return nil, fmt.Errorf("init search: %w", err)
