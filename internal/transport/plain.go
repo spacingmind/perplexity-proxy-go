@@ -159,7 +159,11 @@ func (c *shared) PostSSE(ctx context.Context, path string, body any, onLine func
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		return &StatusError{StatusCode: resp.StatusCode, URL: resp.Request.URL.String(), Body: string(b)}
 	}
-	return scanLines(resp.Body, onLine)
+	err = scanLines(resp.Body, onLine)
+	if errors.Is(err, ErrStopScanning) {
+		return nil
+	}
+	return err
 }
 
 func (c *shared) post(ctx context.Context, path string, body any, headers map[string]string) (*http.Response, error) {
@@ -259,6 +263,11 @@ func decodeBody(resp *http.Response, out any) error {
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
+
+// ErrStopScanning returned from a PostSSE onLine callback stops reading the
+// stream and makes PostSSE return nil (clean end-of-stream), so callers can
+// terminate on a final frame without draining a kept-open connection.
+var ErrStopScanning = errors.New("stop scanning SSE stream")
 
 // scanLines splits the stream into lines and calls onLine per non-empty line.
 func scanLines(r io.Reader, onLine func([]byte) error) error {

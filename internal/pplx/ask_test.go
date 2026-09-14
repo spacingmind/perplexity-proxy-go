@@ -294,3 +294,54 @@ func TestAsk_ClarifyingQuestions(t *testing.T) {
 		t.Fatalf("questions = %v", cq.Questions)
 	}
 }
+
+func TestAsk_FinalTerminatesHeldOpenStream(t *testing.T) {
+	// Server sends the final frame and then holds the body open forever;
+	// Ask must return promptly instead of waiting for the client timeout.
+	released := make(chan struct{})
+	ts := &askServer{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/search/new", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/rest/sse/perplexity_ask", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flush := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"backend_uuid\":\"u\",\"text\":\"{\\\"answer\\\":\\\"done\\\"}\"}\n\n")
+		fmt.Fprint(w, "data: {\"final\":true}\n\n")
+		flush.Flush()
+		<-released
+	})
+	ts.srv = httptest.NewServer(mux)
+	t.Cleanup(func() { close(released); ts.srv.Close() })
+
+	c, err := transport.NewPlain(transport.Options{BaseURL: ts.srv.URL, APIVersion: "2.18", Timeout: 10 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp := spec.Spec{BaseURL: ts.srv.URL, APIVersion: "2.18"}
+	sp.Endpoints.SearchInit = "/search/new"
+	sp.Endpoints.Ask = "/rest/sse/perplexity_ask"
+	sp.Defaults = spec.Defaults{PromptSource: "user", SendBackTextInStreaming: true, Language: "en-US", SourceFocus: "web", SearchFocus: "internet"}
+	sp.Models = []spec.Model{{Name: "best", Identifier: "pplx_pro", Mode: "copilot"}}
+	conv := NewConversation(c, &sp)
+
+	done := make(chan *Answer, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		ans, err := conv.Ask(context.Background(), "q", AskOptions{})
+		done <- ans
+		errCh <- err
+	}()
+	select {
+	case ans := <-done:
+		if err := <-errCh; err != nil {
+			t.Fatalf("Ask: %v", err)
+		}
+		if ans.Text != "done" {
+			t.Errorf("Text = %q", ans.Text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Ask did not return after final frame; stream read is blocked")
+	}
+}

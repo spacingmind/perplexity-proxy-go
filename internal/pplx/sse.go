@@ -5,7 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+
+	"github.com/spacingmind/perplexity-proxy-go/internal/transport"
 )
+
+// errStopStream is the transport stop sentinel: seen on the final frame.
+var errStopStream = transport.ErrStopScanning
 
 // ErrRateLimited is returned when the stream carries a rate-limit error code.
 var ErrRateLimited = errors.New("Perplexity rate limit reached (FREE_TIER_RATE_LIMITED)")
@@ -77,6 +82,9 @@ func (s *convState) processData(d map[string]any) error {
 	}
 	if v, ok := d["final"].(bool); ok && v {
 		s.sawFinal = true
+		// Reference breaks out of the stream on final; returning the stop
+		// sentinel ends the read so a kept-open connection cannot hang.
+		return errStopStream
 	}
 
 	// Primary shape: {"text": "<json string>"}.
