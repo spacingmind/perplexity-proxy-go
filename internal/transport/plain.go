@@ -298,6 +298,11 @@ func decodeBody(resp *http.Response, out any) error {
 // terminate on a final frame without draining a kept-open connection.
 var ErrStopScanning = errors.New("stop scanning SSE stream")
 
+// maxSSELine bounds one SSE line (frame). Real answer frames are well under
+// this; the cap keeps a hostile or broken stream from growing the buffer
+// without limit.
+const maxSSELine = 16 << 20
+
 // scanLines splits the stream into lines and calls onLine per non-empty line.
 func scanLines(r io.Reader, onLine func([]byte) error) error {
 	buf := make([]byte, 0, 64<<10)
@@ -306,6 +311,9 @@ func scanLines(r io.Reader, onLine func([]byte) error) error {
 		n, err := r.Read(chunk)
 		if n > 0 {
 			buf = append(buf, chunk[:n]...)
+			if len(buf) > maxSSELine {
+				return fmt.Errorf("SSE line exceeds %d bytes", maxSSELine)
+			}
 			for {
 				idx := bytes.IndexByte(buf, '\n')
 				if idx < 0 {
