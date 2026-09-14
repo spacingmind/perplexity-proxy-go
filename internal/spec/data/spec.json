@@ -1,0 +1,56 @@
+{
+  "base_url": "https://www.perplexity.ai",
+  "api_version": "2.18",
+  "session_cookie_name": "__Secure-next-auth.session-token",
+  "endpoints": {
+    "ask": "/rest/sse/perplexity_ask",
+    "search_init": "/search/new",
+    "upload": "/rest/uploads/batch_create_upload_urls",
+    "rate_limits": "/rest/rate-limit/all",
+    "user_settings": "/rest/user/settings",
+    "list_threads": "/rest/thread/list_ask_threads",
+    "thread_detail": "/rest/thread",
+    "credits": "/rest/billing/credits",
+    "auth_csrf": "/api/auth/csrf",
+    "auth_otp_redirect": "/api/auth/otp-redirect-link",
+    "auth_signin_email": "/api/auth/signin/email",
+    "auth_totp_verify": "/api/auth/totp-challenge/verify"
+  },
+  "headers": {
+    "x-app-apiclient": "default",
+    "accept": "text/event-stream, application/json",
+    "content_type": "application/json"
+  },
+  "defaults": {
+    "prompt_source": "user",
+    "send_back_text_in_streaming_api": true,
+    "use_schematized_api": false,
+    "language": "en-US",
+    "source_focus": "web",
+    "search_focus": "internet",
+    "search_recency_filter": "",
+    "save_to_library": false
+  },
+  "models": [
+    {"name": "auto", "identifier": "auto", "mode": "concise"},
+    {"name": "experimental", "identifier": "experimental", "mode": "concise"},
+    {"name": "deep-research", "identifier": "pplx_alpha", "mode": "copilot"},
+    {"name": "labs", "identifier": "pplx_beta", "mode": "copilot"},
+    {"name": "best", "identifier": "pplx_pro", "mode": "copilot"},
+    {"name": "gemini-3.1-pro", "identifier": "gemini31pro_high", "mode": "copilot"},
+    {"name": "gpt-5.6", "identifier": "gpt56_terra", "mode": "copilot"},
+    {"name": "gpt-5.6-thinking", "identifier": "gpt56_terra_thinking", "mode": "copilot"},
+    {"name": "gpt-5.6-sol", "identifier": "gpt56_sol", "mode": "copilot"},
+    {"name": "gpt-5.6-sol-thinking", "identifier": "gpt56_sol_thinking", "mode": "copilot"},
+    {"name": "grok-4.5", "identifier": "grok45low", "mode": "copilot"},
+    {"name": "grok-4.5-thinking", "identifier": "grok45medium", "mode": "copilot"},
+    {"name": "claude-sonnet-5", "identifier": "claude50sonnet", "mode": "copilot"},
+    {"name": "claude-sonnet-5-thinking", "identifier": "claude50sonnetthinking", "mode": "copilot"},
+    {"name": "claude-opus-4.8", "identifier": "claude48opus", "mode": "copilot"},
+    {"name": "claude-opus-4.8-thinking", "identifier": "claude48opusthinking", "mode": "copilot"},
+    {"name": "nemotron-3-ultra", "identifier": "nv_nemotron_3_ultra", "mode": "copilot"},
+    {"name": "glm", "identifier": "glm_5_2", "mode": "copilot"},
+    {"name": "kimi", "identifier": "kimik26instant", "mode": "copilot"},
+    {"name": "kimi-thinking", "identifier": "kimik26thinking", "mode": "copilot"}
+  ]
+}
