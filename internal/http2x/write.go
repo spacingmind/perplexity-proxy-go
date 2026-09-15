@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/hpack"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpcommon"
+	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 )
 
 // writeFramer is implemented by any type that is used to write frames.

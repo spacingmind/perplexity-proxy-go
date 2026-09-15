@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/hpack"
+	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 )
 
 var (
@@ -49,6 +49,13 @@ type EncodeHeadersParam struct {
 	// DefaultUserAgent is the User-Agent header to send when the request
 	// neither contains a User-Agent nor disables it.
 	DefaultUserAgent string
+
+	// ChromeOrder emits pseudo-headers in Chrome's order
+	// (:method :authority :scheme :path) and regular headers in a
+	// deterministic Chrome-like sequence instead of Go's random map
+	// iteration. Header order is a fingerprinting signal (e.g. Akamai h2
+	// fingerprint includes header order of the first HEADERS frame).
+	ChromeOrder bool
 }
 
 // EncodeHeadersResult is the result of EncodeHeaders.
@@ -129,21 +136,31 @@ func EncodeHeaders(ctx context.Context, param EncodeHeadersParam, headerf func(n
 		return res, err
 	}
 
+	chromeOrder := param.ChromeOrder
 	enumerateHeaders := func(f func(name, value string)) {
 		// 8.1.2.3 Request Pseudo-Header Fields
 		// The :path pseudo-header field includes the path and query parts of the
 		// target URI (the path-absolute production and optionally a '?' character
 		// followed by the query production, see Sections 3.3 and 3.4 of
 		// [RFC3986]).
-		f(":authority", host)
 		m := req.Method
 		if m == "" {
 			m = "GET"
 		}
-		f(":method", m)
-		if !isNormalConnect {
-			f(":path", path)
-			f(":scheme", req.URL.Scheme)
+		if chromeOrder {
+			f(":method", m)
+			f(":authority", host)
+			if !isNormalConnect {
+				f(":scheme", req.URL.Scheme)
+				f(":path", path)
+			}
+		} else {
+			f(":authority", host)
+			f(":method", m)
+			if !isNormalConnect {
+				f(":path", path)
+				f(":scheme", req.URL.Scheme)
+			}
 		}
 		if protocol != "" {
 			f(":protocol", protocol)
@@ -153,7 +170,19 @@ func EncodeHeaders(ctx context.Context, param EncodeHeadersParam, headerf func(n
 		}
 
 		var didUA bool
-		for k, vv := range req.Header {
+		var headerKeys []string
+		for k := range req.Header {
+			headerKeys = append(headerKeys, k)
+		}
+		if chromeOrder {
+			sort.Slice(headerKeys, func(i, j int) bool {
+				return chromeHeaderRank(headerKeys[i]) < chromeHeaderRank(headerKeys[j])
+			})
+		} else {
+			sort.Strings(headerKeys)
+		}
+		for _, k := range headerKeys {
+			vv := req.Header[k]
 			if asciiEqualFold(k, "host") || asciiEqualFold(k, "content-length") {
 				// Host is :authority, already sent.
 				// Content-Length is automatic, set below.
@@ -500,4 +529,44 @@ func NewServerRequest(rp ServerRequestParam) ServerRequestResult {
 		RequestURI:    requestURI,
 		Trailer:       trailer,
 	}
+}
+
+// chromeHeaderOrder is the header sequence Chrome uses for a navigation/XHR
+// request (from wire captures); headers not listed sort after, alphabetically.
+var chromeHeaderOrder = []string{
+	"sec-ch-ua",
+	"sec-ch-ua-mobile",
+	"sec-ch-ua-platform",
+	"upgrade-insecure-requests",
+	"User-Agent",
+	"Accept",
+	"Sec-Fetch-Site",
+	"Sec-Fetch-Mode",
+	"Sec-Fetch-User",
+	"Sec-Fetch-Dest",
+	"Accept-Encoding",
+	"Accept-Language",
+	"Priority",
+	"Content-Type",
+	"Content-Length",
+	"Origin",
+	"Referer",
+	"Cookie",
+	"x-app-apiclient",
+	"x-app-apiversion",
+}
+
+var chromeHeaderRankCache = func() map[string]int {
+	m := make(map[string]int, len(chromeHeaderOrder))
+	for i, h := range chromeHeaderOrder {
+		m[strings.ToLower(h)] = i
+	}
+	return m
+}()
+
+func chromeHeaderRank(k string) int {
+	if r, ok := chromeHeaderRankCache[strings.ToLower(k)]; ok {
+		return r
+	}
+	return len(chromeHeaderOrder)
 }

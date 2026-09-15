@@ -50,9 +50,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/hpack"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpcommon"
+	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 )
 
 const (

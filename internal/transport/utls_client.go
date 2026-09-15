@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	utls "github.com/refraction-networking/utls"
 )
@@ -40,8 +41,9 @@ func (s *http2TransportShim) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 type utlsRoundTripper struct {
-	mu    sync.Mutex
-	conns map[string]pooledConn
+	mu       sync.Mutex
+	conns    map[string]pooledConn
+	insecure bool
 }
 
 var _ http.RoundTripper = (*utlsRoundTripper)(nil)
@@ -66,7 +68,7 @@ func (t *utlsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		}
 	}
 
-	conn, err := dialUTLS(ctx, "tcp", canonicalAddr(req.URL))
+	conn, err := dialUTLSInsecure(ctx, "tcp", canonicalAddr(req.URL), t.insecure)
 	if err != nil {
 		return nil, err
 	}
@@ -111,24 +113,7 @@ func (t *utlsRoundTripper) CloseIdleConnections() {
 }
 
 func dialUTLS(ctx context.Context, network, addr string) (net.Conn, error) {
-	d := net.Dialer{}
-	conn, err := d.DialContext(ctx, network, addr)
-	if err != nil {
-		return nil, err
-	}
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	cfg := &utls.Config{ServerName: host}
-	tlsConn := utls.UClient(conn, cfg, utls.HelloChrome_Auto)
-	applyChromeHello(tlsConn)
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	return tlsConn, nil
+	return dialUTLSInsecure(ctx, network, addr, false)
 }
 
 func canonicalAddr(u *url.URL) string {
@@ -141,4 +126,44 @@ func canonicalAddr(u *url.URL) string {
 		}
 	}
 	return net.JoinHostPort(u.Hostname(), port)
+}
+
+// NewDebugTransport exposes the production roundtripper (utls + http2x fork)
+// against an arbitrary base URL with certificate verification disabled, for
+// wire-frame probing against a local sink.
+func NewDebugTransport(baseURL string) *http.Client {
+	return &http.Client{
+		Transport: &debugRoundTripper{base: baseURL},
+		Timeout:   10 * time.Second,
+	}
+}
+
+type debugRoundTripper struct{ base string }
+
+func (d *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt := &utlsRoundTripper{conns: map[string]pooledConn{}, insecure: true}
+	return rt.RoundTrip(req)
+}
+
+func dialUTLSInsecure(ctx context.Context, network, addr string, insecure bool) (net.Conn, error) {
+	if !insecure {
+		return dialUTLS(ctx, network, addr)
+	}
+	d := net.Dialer{}
+	conn, err := d.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	cfg := &utls.Config{ServerName: host, InsecureSkipVerify: true, NextProtos: []string{"h2"}}
+	tlsConn := utls.UClient(conn, cfg, utls.HelloChrome_Auto)
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return tlsConn, nil
 }

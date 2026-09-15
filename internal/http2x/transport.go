@@ -32,9 +32,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/hpack"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpcommon"
+	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 )
 
 const (
@@ -538,9 +538,24 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool, internalStateHook 
 	}
 
 	cc.bw.Write(clientPreface)
-	cc.fr.WriteSettings(initialSettings...)
-	cc.fr.WriteWindowUpdate(0, uint32(conf.MaxUploadBufferPerConnection))
-	cc.inflow.init(conf.MaxUploadBufferPerConnection + initialWindowSize)
+	if chromeFingerprint.Enabled {
+		// Byte-exact match of curl_cffi impersonate=chrome (Chrome 150)
+		// first flush, verified by wire capture against a local h2 sink:
+		// exactly four SETTINGS, no PRIORITY frames (Chrome removed
+		// dependency-based priority), no stream-0 WINDOW_UPDATE.
+		cc.initialStreamRecvWindowSize = 6291456
+		cc.initialWindowSize = 6291456
+		cc.fr.WriteSettings(
+			Setting{ID: SettingHeaderTableSize, Val: 65536},
+			Setting{ID: SettingEnablePush, Val: 0},
+			Setting{ID: SettingInitialWindowSize, Val: 6291456},
+			Setting{ID: SettingMaxHeaderListSize, Val: 262144},
+		)
+	} else {
+		cc.fr.WriteSettings(initialSettings...)
+		cc.fr.WriteWindowUpdate(0, uint32(conf.MaxUploadBufferPerConnection))
+		cc.inflow.init(conf.MaxUploadBufferPerConnection + initialWindowSize)
+	}
 	cc.bw.Flush()
 	if cc.werr != nil {
 		cc.Close()
@@ -1269,6 +1284,7 @@ func encodeRequestHeaders(req *http.Request, addGzipHeader bool, peerMaxHeaderLi
 		AddGzipHeader:         addGzipHeader,
 		PeerMaxHeaderListSize: peerMaxHeaderListSize,
 		DefaultUserAgent:      defaultUserAgent,
+		ChromeOrder:           chromeFingerprint.Enabled,
 	}, headerf)
 }
 

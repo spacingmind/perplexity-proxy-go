@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 
-	"golang.org/x/net/http2"
+	http2 "github.com/spacingmind/perplexity-proxy-go/internal/http2x"
 )
 
 // Chrome's HTTP/2 connection preamble, as established reference values:
@@ -52,6 +52,7 @@ import (
 // Regular header ordering is fine: Go writes header lists sorted
 // alphabetically, matching Chrome's sorted lowercase emission.
 func newChromeH2Transport(dialTLS func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error)) *http2.Transport {
+	http2.EnableChromeFingerprint()
 	return &http2.Transport{
 		DialTLSContext:            dialTLS,
 		MaxDecoderHeaderTableSize: 65536, // Chrome SETTINGS_HEADER_TABLE_SIZE

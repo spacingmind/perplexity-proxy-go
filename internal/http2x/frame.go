@@ -15,8 +15,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/hpack"
+	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpguts"
 	"github.com/spacingmind/perplexity-proxy-go/internal/xnet/httpsfv"
 )
 
