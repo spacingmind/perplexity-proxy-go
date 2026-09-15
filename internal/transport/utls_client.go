@@ -117,7 +117,7 @@ func dialUTLSOpt(ctx context.Context, network, addr string, insecure bool) (net.
 		cfg.InsecureSkipVerify = true
 		cfg.NextProtos = []string{"h2"}
 	}
-	tlsConn := utls.UClient(conn, cfg, utls.HelloChrome_Auto)
+	tlsConn := utls.UClient(conn, cfg, utls.HelloCustom)
 	applyChromeHello(tlsConn)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		conn.Close()

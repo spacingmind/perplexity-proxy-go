@@ -33,11 +33,19 @@ func chromeClientHelloSpec() *utls.ClientHelloSpec {
 	return helloSpec
 }
 
-// applyChromeHello configures conn with the captured spec. Falls back to
-// doing nothing (caller already constructed the UConn with HelloChrome_Auto,
-// which then remains in effect) when the capture cannot be applied.
+// applyChromeHello configures conn with the captured spec. The UConn must
+// be constructed with utls.HelloCustom — utls regenerates the handshake for
+// known IDs like HelloChrome_Auto during HandshakeContext, silently
+// overwriting any preset applied earlier. Falls back to HelloChrome_Auto's
+// spec when the capture cannot be applied.
 func applyChromeHello(conn *utls.UConn) {
 	if spec := chromeClientHelloSpec(); spec != nil {
-		_ = conn.ApplyPreset(spec)
+		if err := conn.ApplyPreset(spec); err == nil {
+			return
+		}
+	}
+	fallback, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err == nil {
+		_ = conn.ApplyPreset(&fallback)
 	}
 }
