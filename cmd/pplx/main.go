@@ -44,6 +44,8 @@ func run(args []string) error {
 		return cmdUsage(rest)
 	case "spec":
 		return cmdSpec(rest)
+	case "mcp":
+		return cmdMCP(rest)
 	case "help", "-h", "--help":
 		fmt.Print(usageText)
 		return nil
