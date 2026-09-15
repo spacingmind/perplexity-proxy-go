@@ -18,6 +18,8 @@ Usage:
       --no-citations  print answer only
   pplx usage                              print remaining rate limits
   pplx spec show|sync|check               inspect or update the protocol spec
+  pplx mcp                                MCP server over stdio (tools: ask, research, usage, check)
+  pplx serve [--addr] [--api-key]         Anthropic-compatible /v1/messages server
 `
 
 func main() {
@@ -46,6 +48,8 @@ func run(args []string) error {
 		return cmdSpec(rest)
 	case "mcp":
 		return cmdMCP(rest)
+	case "serve":
+		return cmdServe(rest)
 	case "help", "-h", "--help":
 		fmt.Print(usageText)
 		return nil

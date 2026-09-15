@@ -66,3 +66,52 @@ smind / any ACP agent can use the Perplexity Pro subscription as a provider.
 - Council (multi-model), file uploads, thread listing endpoints in MCP.
 - OpenAI /v1/chat/completions compat layer.
 - TLS on the local server.
+
+## Progress
+
+- [x] Step A — streaming support in internal/pplx (AskStream + chunk callback) — commit 1bc82e8
+- [x] Step B — MCP stdio server + pplx mcp wiring — commit 67bf9c2
+- [x] Step C — Anthropic /v1/messages server + pplx serve wiring + README
+
+## Validation
+
+1. **MCP handshake end-to-end** — PASS. TestMCP_InitializeHandshake covers
+   initialize → tools/list (4 tools, JSON Schema inputSchema, required
+   fields); binary smoke `echo ... | pplx mcp` returns the initialize
+   result. In-memory pipes + httptest fake transport, no network.
+2. **POST /v1/messages single-turn** — PASS. TestAPI_Messages_SingleTurn:
+   valid Anthropic message JSON (id msg_<uuid>, content blocks, end_turn,
+   usage stubs). httptest + fake client.
+3. **Streaming SSE** — PASS. TestAPI_Messages_Stream: exact event sequence
+   message_start, content_block_start, content_block_delta x2,
+   content_block_stop, message_delta, message_stop (last); joined
+   text_deltas == final answer.
+4. **Multi-turn followup** — PASS. TestAPI_Messages_MultiTurnFollowup:
+   second request to the same conversation carries last_backend_uuid +
+   query_source=followup (asserted on the captured wire payload);
+   TestAPI_ConversationHeaderIsolation: x-pplx-conversation ids isolate
+   threads. In-memory map conversationID→Conversation; explicit header or
+   shared "default".
+5. **API key enforcement** — PASS. TestAPI_AuthRequired: no key → 401
+   Anthropic error shape; x-api-key and Bearer both accepted; wrong key →
+   401. No flag → no auth.
+6. **Build tag + README** — PASS. All build/test commands run with
+   -tags http2legacy (source .env.build); README documents pplx serve
+   (ANTHROPIC_BASE_URL) and pplx mcp (Claude Code / stdio config snippet).
+7. **Tooling** — PASS. gofmt clean, go vet -tags http2legacy ./... clean,
+   go test -tags http2legacy ./... green: cmd/pplx, internal/api (12),
+   internal/mcp (10), internal/pplx, internal/spec, internal/transport.
+   Zero real network in tests.
+
+### Notes / deviations
+
+- System prompt: flattened as a `system:` prefix line (plan's "keep
+  simple" option).
+- Multi-turn within one request: turns joined with role prefixes
+  ("user: X\nassistant: Y\nuser: Z"); cross-request continuity via
+  per-conversation Conversation instances (backend_uuid followups).
+- usage tokens are ~len/4 estimates, as the plan allows ("usage stubs").
+- max_tokens accepted but not enforced (Perplexity has no knob).
+- Anthropic model names ARE the spec model names (claude-sonnet-5 etc), so
+  "mapping" is a spec lookup; unknown names pass through and fall back to
+  best inside pplx.

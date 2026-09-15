@@ -23,11 +23,50 @@ pplx login                        # email + OTP (TOTP supported)
 pplx ask "query" [-m model] [-s source]
 pplx usage                        # remaining rate limits
 pplx spec show|sync|check         # protocol spec inspection / update
+pplx mcp                          # stdio MCP server
+pplx serve [--addr] [--api-key]   # Anthropic-compatible HTTP server
 pplx logout                       # delete the local token
 ```
 
 Models: `-m sonar|best|gpt56_terra|claude50sonnet|gemini31|grok45|glm|kimi|...`
 (`pplx spec show` lists all).
+
+## Anthropic-compatible server: `pplx serve`
+
+```
+pplx serve --addr 127.0.0.1:8080 --api-key mykey
+```
+
+Implements `POST /v1/messages` (Anthropic Messages API shape, streaming
+included). Point any Anthropic-compatible client at it:
+
+```
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8080
+export ANTHROPIC_AUTH_TOKEN=mykey   # whatever --api-key you set
+```
+
+- Model names map to pplx models: `claude-sonnet-5` → `claude50sonnet`,
+  `gpt-5.6` → `gpt56_terra`, etc.; native identifiers (`best`, `sonar`)
+  pass through.
+- Multi-turn: requests hitting the same server share one Perplexity
+  conversation, so follow-ups carry context (send `x-pplx-conversation:
+  <id>` to start/isolate threads).
+- `stream: true` emits the Anthropic SSE sequence (`message_start` →
+  `content_block_delta` per chunk → `message_stop`).
+- System prompts become a `system:` prefix line; only text content blocks
+  are supported.
+
+## MCP server: `pplx mcp`
+
+Stdio MCP server with tools `pplx_ask`, `pplx_deep_research`, `pplx_usage`,
+`pplx_spec_check`. Claude Code:
+
+```json
+{ "mcpServers": { "pplx": { "command": "/path/to/pplx", "args": ["mcp"] } } }
+```
+
+Any MCP-capable client (Paseo, smind, ...) that speaks stdio JSON-RPC works
+the same way — run `pplx mcp` as the server command.
 
 ## Transport fingerprinting
 
