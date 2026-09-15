@@ -48,6 +48,7 @@ func sseData(line []byte) (map[string]any, bool) {
 // reference _update_state: latest answer text, chunks, citations, thread
 // identity for follow-ups.
 type convState struct {
+	authwalled     bool
 	backendUUID    string
 	readWriteToken string
 	title          string
@@ -71,9 +72,23 @@ type Citation struct {
 // processData folds one SSE data object into the state. Every field access
 // is type-guarded; unknown fields and shapes are ignored without error so
 // upstream protocol additions cannot break parsing.
+// ErrAuthwalled is returned when the stream completes "successfully" but
+// carries an authwall upsell (fraud_authwall_upsell, logged_out_thread_sign_in):
+// the server treated us as anonymous/bot despite the session cookie. Callers
+// can fall back to the bridge.
+var ErrAuthwalled = errors.New("perplexity authwall: request was treated as logged out")
+
 func (s *convState) processData(d map[string]any) error {
 	if ec, _ := d["error_code"].(string); ec == "FREE_TIER_RATE_LIMITED" {
 		return ErrRateLimited
+	}
+	// Authwall arrives as a normal-looking completed thread whose answer is
+	// "Sign up and repeat your request." — surface it as an error so the
+	// bridge fallback can kick in instead of returning junk.
+	if ui, ok := d["upsell_information"].(map[string]any); ok {
+		if name, _ := ui["name"].(string); name == "fraud_authwall_upsell" || name == "logged_out_thread_sign_in" {
+			s.authwalled = true
+		}
 	}
 	if v, ok := d["backend_uuid"].(string); ok && v != "" {
 		s.backendUUID = v
@@ -84,9 +99,12 @@ func (s *convState) processData(d map[string]any) error {
 	if v, ok := d["thread_title"].(string); ok && v != "" {
 		s.title = v
 	}
-	if v, ok := d["final"].(bool); ok && v {
-		// Reference breaks out of the stream on final; returning the stop
-		// sentinel ends the read so a kept-open connection cannot hang.
+	if v, ok := d["final_sse_message"].(bool); ok && v {
+		// Stop on the LAST SSE message, not "final": real streams mark
+		// intermediate frames final=true before the DONE frame that carries
+		// the full answer — stopping at the first final truncated answers
+		// to whatever partial chunks arrived. final_sse_message=true is the
+		// actual end-of-stream marker (verified on live wire).
 		return errStopStream
 	}
 
@@ -152,8 +170,9 @@ func (s *convState) absorbAnswerData(data map[string]any) {
 			s.citations = citations
 		}
 	}
-	if a, ok := data["answer"].(string); ok {
-		s.answer = a
+	answerText, hasAnswer := data["answer"].(string)
+	if hasAnswer {
+		s.answer = answerText
 	}
 	if chunks, ok := data["chunks"].([]any); ok {
 		for _, c := range chunks {
@@ -161,7 +180,11 @@ func (s *convState) absorbAnswerData(data map[string]any) {
 				s.chunks = append(s.chunks, cs)
 			}
 		}
-		if s.answer == "" && len(s.chunks) > 0 {
+		// Mirror the reference _update_state: when this frame has chunks
+		// but no answer field, the running chunk join IS the answer so far
+		// (streaming deltas) — it must overwrite, not only fill an empty
+		// answer, or a stale single-character answer frame sticks forever.
+		if !hasAnswer && len(s.chunks) > 0 {
 			s.answer = strings.Join(s.chunks, "")
 		}
 	}

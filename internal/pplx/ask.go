@@ -92,6 +92,18 @@ func (c *Conversation) buildPayload(query string, opt AskOptions) map[string]any
 // into an Answer. State captured from the stream (backend uuid, token) is
 // kept so the next Ask is a follow-up.
 func (c *Conversation) Ask(ctx context.Context, query string, opt AskOptions) (*Answer, error) {
+	if bridgeEnabled() {
+		return c.askViaBridge(ctx, query, opt)
+	}
+	ans, err := c.askDirect(ctx, query, opt)
+	if err != nil && bridgeAuto() && bridgeWorthy(err) {
+		return c.askViaBridge(ctx, query, opt)
+	}
+	return ans, err
+}
+
+// askDirect is the previous Ask body: the native Go transport path.
+func (c *Conversation) askDirect(ctx context.Context, query string, opt AskOptions) (*Answer, error) {
 	payload := c.buildPayload(query, opt)
 
 	// Reference truncates to 500 characters; slice runes, not bytes, so a
@@ -116,6 +128,12 @@ func (c *Conversation) Ask(ctx context.Context, query string, opt AskOptions) (*
 		return nil, fmt.Errorf("ask: %w", err)
 	}
 
+	if state.authwalled {
+		// Do NOT adopt the authwalled thread's state: its backend uuid is
+		// a junk thread ("Sign up..."), and following up on it poisons the
+		// bridge retry.
+		return nil, ErrAuthwalled
+	}
 	if state.backendUUID != "" {
 		c.backendUUID = state.backendUUID
 	}
@@ -169,6 +187,12 @@ func (c *Conversation) AskStream(ctx context.Context, query string, opt AskOptio
 		return nil, fmt.Errorf("ask: %w", err)
 	}
 
+	if state.authwalled {
+		// Do NOT adopt the authwalled thread's state: its backend uuid is
+		// a junk thread ("Sign up..."), and following up on it poisons the
+		// bridge retry.
+		return nil, ErrAuthwalled
+	}
 	if state.backendUUID != "" {
 		c.backendUUID = state.backendUUID
 	}
@@ -199,4 +223,21 @@ func (c *Conversation) AskRaw(ctx context.Context, query string, opt AskOptions,
 		onLine(line)
 		return nil
 	})
+}
+
+// bridgeWorthy reports whether an ask error looks like the server rejecting
+// our fingerprint (authwall upsell surfaces as a normal answer in the dump,
+// but the parser surfaces rate-limit errors; handshake/transport errors also
+// qualify).
+func bridgeWorthy(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, sig := range []string{"ErrRateLimited", "rate limit", "handshake", "connection error", "FLOW_CONTROL", "logged_out", "Sign up and repeat", "authwall"} {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
 }

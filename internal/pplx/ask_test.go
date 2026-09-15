@@ -308,7 +308,7 @@ func TestAsk_FinalTerminatesHeldOpenStream(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flush := w.(http.Flusher)
 		fmt.Fprint(w, "data: {\"backend_uuid\":\"u\",\"text\":\"{\\\"answer\\\":\\\"done\\\"}\"}\n\n")
-		fmt.Fprint(w, "data: {\"final\":true}\n\n")
+		fmt.Fprint(w, "data: {\"final_sse_message\":true}\n\n")
 		flush.Flush()
 		<-released
 	})

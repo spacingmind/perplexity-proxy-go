@@ -3,10 +3,15 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	utls "github.com/refraction-networking/utls"
@@ -65,7 +70,64 @@ func (a *alpnRoundTripper) CloseIdleConnections() {
 }
 
 func dialUTLS(ctx context.Context, network, addr string) (net.Conn, error) {
-	return dialUTLSOpt(ctx, network, addr, false)
+	conn, err := dialUTLSOpt(ctx, network, addr, false)
+	if err == nil {
+		return conn, nil
+	}
+	if !isHandshakeFailure(err) {
+		return nil, err
+	}
+	// Self-heal: a failing static ClientHello is likely fingerprint-burned.
+	// Try to capture a fresh one (curl_cffi shuffles extensions per session)
+	// and retry the handshake once.
+	if healErr := refreshCapturedHello(); healErr == nil {
+		RefreshHello()
+		if conn2, err2 := dialUTLSOpt(ctx, network, addr, false); err2 == nil {
+			return conn2, nil
+		}
+	}
+	return nil, err
+}
+
+func isHandshakeFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "handshake failure") || strings.Contains(msg, "HandshakeFailure")
+}
+
+// refreshCapturedHello runs the capture helper (curl_cffi) to produce a
+// fresh ClientHello at the runtime hello path.
+func refreshCapturedHello() error {
+	script := os.Getenv("PPLX_CAPTURE_SCRIPT")
+	if script == "" {
+		script = filepath.Join(sourceDir(), "scripts", "capture_hello.py")
+	}
+	py := os.Getenv("PPLX_PYTHON")
+	if py == "" {
+		py = "python3"
+	}
+	out := helloFile()
+	if out == "" {
+		return errors.New("no hello file path")
+	}
+	if err := os.MkdirAll(filepath.Dir(out), 0o700); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, py, script, out)
+	return cmd.Run()
+}
+
+// sourceDir best-effort locates the repo scripts dir for the capture helper
+// (executable-relative lookup is unreliable; env override exists).
+func sourceDir() string {
+	if v := os.Getenv("PPLX_HOME_DIR"); v != "" {
+		return v
+	}
+	return "."
 }
 
 func canonicalAddr(u *url.URL) string {
@@ -113,13 +175,24 @@ func dialUTLSOpt(ctx context.Context, network, addr string, insecure bool) (net.
 		return nil, err
 	}
 	cfg := &utls.Config{ServerName: host}
+	if os.Getenv("PPLX_DEBUG_DIAL") == "1" {
+		fmt.Fprintf(os.Stderr, "dialUTLSOpt addr=%q host=%q insecure=%v\n", addr, host, insecure)
+	}
 	if insecure {
 		cfg.InsecureSkipVerify = true
 		cfg.NextProtos = []string{"h2"}
 	}
+	// Captured Chrome 150 ClientHello (data/chrome150_clienthello.bin) via
+	// HelloCustom + per-call FromRaw. Verified live: passes fraud scoring
+	// (4/4) where HelloChrome_Auto (133) fails 0/4, and the ML-KEM
+	// key_share must stay intact (dropping it = handshake failure).
 	tlsConn := utls.UClient(conn, cfg, utls.HelloCustom)
 	applyChromeHello(tlsConn)
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
+	err = tlsConn.HandshakeContext(ctx)
+	if os.Getenv("PPLX_DEBUG_DIAL") == "1" {
+		fmt.Fprintf(os.Stderr, "handshake addr=%q err=%v alpn=%q\n", addr, err, tlsConn.ConnectionState().NegotiatedProtocol)
+	}
+	if err != nil {
 		conn.Close()
 		return nil, err
 	}

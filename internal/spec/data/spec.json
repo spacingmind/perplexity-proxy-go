@@ -39,6 +39,11 @@
       "mode": "concise"
     },
     {
+      "name": "sonar",
+      "identifier": "experimental",
+      "mode": "concise"
+    },
+    {
       "name": "deep-research",
       "identifier": "pplx_alpha",
       "mode": "copilot"
