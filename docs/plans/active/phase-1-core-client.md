@@ -207,3 +207,30 @@ fidelity, state, security, edge cases). 12 commits; `gofmt`/`go vet`/
 ### Test tally after review
 
 49 tests across 4 packages; no network in tests.
+
+## Post-review: live smoke test + H2 fingerprint saga (2026-09-15)
+
+Live testing against the real Pro account surfaced three issues, then a
+multi-day bot-detection investigation:
+
+1. **h2-over-utls bug**: `ForceAttemptHTTP2` is a no-op with custom
+   `DialTLSContext` — added an ALPN-dispatching roundtripper (`0fb2989`).
+2. **Model drift**: server rejects `auto` ("issue with model selection");
+   dropped from spec, default is `best`. `experimental` (Sonar) etc. all work.
+3. **fraud_authwall (~50% of asks)**: solved by byte-exact Chrome 150
+   fingerprinting (`2ed5c87`, 8/8 live pass):
+   - Captured curl_cffi ClientHello (Chrome 150) via local TLS sink; utls
+     builtin (Chrome 133) was too old.
+   - Vendored x/net/http2 (internal/http2x) — but the patch was DEAD CODE on
+     Go 1.27+ because x/net/http2 compiles transport_wrap.go unless built
+     with `-tags http2legacy`. This is now mandatory (README, .env.build).
+   - Wire-capture diff against curl_cffi fixed the details: exactly 4
+     SETTINGS (no MAX_CONCURRENT_STREAMS / WINDOW_UPDATE), NO PRIORITY
+     frames (Chrome dropped them), pseudo-header order
+     `:method :authority :scheme :path`, Chrome regular-header order.
+   - Differential testing (Python reference + our headers = 6/6 pass) proved
+     the wire layer, not headers/cookies, was the bot signal.
+
+Tooling built during the hunt: `cmd/frameprobe` + local h2 sink
+(`/tmp/h2diff3.py` pattern) for byte-level frame diffing; `pplx dump` for raw
+SSE capture.
