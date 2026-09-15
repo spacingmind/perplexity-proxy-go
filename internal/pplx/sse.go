@@ -54,6 +54,11 @@ type convState struct {
 	answer         string
 	chunks         []string
 	citations      []Citation
+	// onChunk, when set, receives incremental answer text deltas as they
+	// arrive (IN_PROGRESS ask_text blocks carry only the new chunks). The
+	// terminal DONE block repeats every chunk, so deltas are emitted for
+	// IN_PROGRESS frames only and the final text comes from the Answer.
+	onChunk func(string)
 }
 
 // Citation is one web result cited by [n] markers in the answer text.
@@ -177,6 +182,7 @@ func (s *convState) absorbBlocks(blocks []any) {
 		switch usage, _ := block["intended_usage"].(string); usage {
 		case "ask_text":
 			if md, ok := block["markdown_block"].(map[string]any); ok {
+				s.emitChunkDeltas(md)
 				s.absorbAnswerData(md)
 			}
 		case "web_results":
@@ -199,6 +205,28 @@ func (s *convState) absorbBlocks(blocks []any) {
 					}
 				}
 			}
+		}
+	}
+}
+
+// emitChunkDeltas forwards an ask_text block's chunks to the onChunk
+// callback. IN_PROGRESS frames carry only the chunks new since the previous
+// frame (chunk_starting_offset counts previously sent chunks); DONE frames
+// repeat the full list alongside the final answer and are not forwarded.
+func (s *convState) emitChunkDeltas(md map[string]any) {
+	if s.onChunk == nil {
+		return
+	}
+	if p, _ := md["progress"].(string); p != "IN_PROGRESS" {
+		return
+	}
+	chunks, ok := md["chunks"].([]any)
+	if !ok {
+		return
+	}
+	for _, c := range chunks {
+		if cs, ok := c.(string); ok {
+			s.onChunk(cs)
 		}
 	}
 }

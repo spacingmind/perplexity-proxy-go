@@ -143,6 +143,47 @@ func currentTimezone() string {
 	return name
 }
 
+// AskStream is Ask with incremental delivery: onChunk fires with each answer
+// text delta as the SSE stream arrives (IN_PROGRESS frames carry only the new
+// text), then the final Answer returns as usual. onChunk may be nil.
+func (c *Conversation) AskStream(ctx context.Context, query string, opt AskOptions, onChunk func(string)) (*Answer, error) {
+	payload := c.buildPayload(query, opt)
+
+	searchQuery := query
+	if runes := []rune(query); len(runes) > 500 {
+		searchQuery = string(runes[:500])
+	}
+	if err := c.t.Get(ctx, fmt.Sprintf("%s?q=%s", c.sp.Endpoints.SearchInit, url.QueryEscape(searchQuery))); err != nil {
+		return nil, fmt.Errorf("init search: %w", err)
+	}
+
+	state := &convState{onChunk: onChunk}
+	err := c.t.PostSSE(ctx, c.sp.Endpoints.Ask, payload, func(line []byte) error {
+		d, ok := sseData(line)
+		if !ok {
+			return nil
+		}
+		return state.processData(d)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ask: %w", err)
+	}
+
+	if state.backendUUID != "" {
+		c.backendUUID = state.backendUUID
+	}
+	if state.readWriteToken != "" {
+		c.readWriteToken = state.readWriteToken
+	}
+
+	return &Answer{
+		Text:        state.answer,
+		Citations:   state.citations,
+		ThreadTitle: state.title,
+		UUID:        c.backendUUID,
+	}, nil
+}
+
 // AskRaw streams the ask SSE and hands every raw line to onLine, without any
 // parsing. Live-debug tooling only.
 func (c *Conversation) AskRaw(ctx context.Context, query string, opt AskOptions, onLine func([]byte)) error {
