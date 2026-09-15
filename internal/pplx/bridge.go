@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -16,6 +17,22 @@ import (
 // a Go ask fails with fraud/rate-limit signals.
 
 const bridgeScriptDefault = "scripts/bridge_ask.py"
+
+// bridgePython resolves the python to use: PPLX_PYTHON env, else the
+// managed bridge venv if present, else python3 from PATH.
+func bridgePython() string {
+	if v := os.Getenv("PPLX_PYTHON"); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		cand := filepath.Join(home, ".pplx", "bridge-venv", "bin", "python")
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+	return "python3"
+}
 
 func bridgeEnabled() bool {
 	return os.Getenv("PPLX_BRIDGE") == "1"
@@ -31,10 +48,7 @@ func bridgeAuto() bool {
 // python3) with the query, mirroring Conversation.Ask's contract including
 // followup state.
 func (c *Conversation) askViaBridge(ctx context.Context, query string, opt AskOptions) (*Answer, error) {
-	py := os.Getenv("PPLX_PYTHON")
-	if py == "" {
-		py = "python3"
-	}
+	py := bridgePython()
 	script := os.Getenv("PPLX_BRIDGE_SCRIPT")
 	if script == "" {
 		script = bridgeScriptDefault

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -40,6 +41,11 @@ func run(args []string) error {
 		return cmdLogin(rest)
 	case "ask":
 		return cmdAsk(rest)
+	case "bridge":
+		if len(rest) > 0 && rest[0] == "setup" {
+			return cmdBridgeSetup(rest[1:])
+		}
+		return errors.New("usage: pplx bridge setup")
 	case "dump":
 		return cmdDump(args[1:])
 	case "usage":

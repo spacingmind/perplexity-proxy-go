@@ -100,3 +100,21 @@ GOFLAGS=-tags=http2legacy go test ./...
 ```
 
 No test touches the network; live smoke tests are manual (`pplx dump`).
+
+## Bridge fallback (recommended setup)
+
+The Go transport's fingerprint occasionally gets authwalled by Perplexity's
+bot scoring. `pplx` auto-falls back to a curl_cffi bridge (the reference
+engine, passes consistently):
+
+```
+pplx bridge setup     # creates ~/.pplx/bridge-venv (python3 + curl_cffi)
+```
+
+After setup, no env vars needed. Controls: `PPLX_BRIDGE=1` (always bridge),
+`PPLX_NO_BRIDGE=1` (never), `PPLX_PYTHON` (custom python), `PPLX_BRIDGE_SCRIPT`
+(custom bridge script).
+
+Note: the reference Python package must be importable by the bridge script —
+it points at a sibling checkout (`refs/perplexity-web-mcp`); adjust
+`scripts/bridge_ask.py` `sys.path` if your layout differs.
