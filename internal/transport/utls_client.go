@@ -3,117 +3,69 @@ package transport
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
-	"sync"
+	"os"
 	"time"
 
 	utls "github.com/refraction-networking/utls"
+	http2 "github.com/spacingmind/perplexity-proxy-go/internal/http2x"
 )
 
-// NewUTLS returns a Client whose TLS handshake presents a Chrome ClientHello
-// via utls. Connections are pooled per host+protocol so a session (warm-up
-// GET, then POST on the same tab-like connection) mirrors browser behavior —
-// bot scoring flagged the previous fresh-connection-per-request pattern.
+// NewUTLS returns a Client whose TLS handshake presents the captured Chrome
+// 150 ClientHello via utls and speaks HTTP/2 through the patched http2x
+// fork (Chrome byte-exact frames) or HTTP/1.1 when ALPN selects it.
+//
+// A single http2.Transport owns connection pooling: it re-dials through
+// dialUTLS per connection but keeps connections alive across requests,
+// which is both correct (multiplexed streams share one conn) and
+// browser-like (warm connection reuse).
 func NewUTLS(opt Options) (Client, error) {
+	t2 := newChromeH2Transport(func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+		return dialUTLS(ctx, network, addr)
+	})
+	t1 := &http.Transport{DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dialUTLS(ctx, network, addr)
+	}}
 	return newShared(&http.Client{
 		Timeout:   opt.timeout(),
-		Transport: &utlsRoundTripper{conns: map[string]pooledConn{}},
+		Transport: &alpnRoundTripper{t2: t2, t1: t1},
 	}, opt, nil)
 }
 
-type pooledConn struct {
-	t2 *http2TransportShim // non-nil if ALPN negotiated h2
-	t1 *http.Transport     // non-nil for http/1.1
+// alpnRoundTripper dials once with utls, then serves the request over the
+// protocol ALPN selected. h2 connections are owned by the shared http2
+// Transport (pooled); h1 falls back to a plain Transport.
+type alpnRoundTripper struct {
+	t2 *http2.Transport
+	t1 *http.Transport
 }
 
-// http2TransportShim exists only to keep imports tidy; it wraps http2.Transport.
-type http2TransportShim struct {
-	inner interface {
-		RoundTrip(*http.Request) (*http.Response, error)
-	}
-}
+var _ http.RoundTripper = (*alpnRoundTripper)(nil)
 
-func (s *http2TransportShim) RoundTrip(req *http.Request) (*http.Response, error) {
-	return s.inner.RoundTrip(req)
-}
-
-type utlsRoundTripper struct {
-	mu       sync.Mutex
-	conns    map[string]pooledConn
-	insecure bool
-}
-
-var _ http.RoundTripper = (*utlsRoundTripper)(nil)
-
-func (t *utlsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	ctx := req.Context()
+func (a *alpnRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL.Scheme != "https" {
-		t1 := &http.Transport{}
-		return t1.RoundTrip(req)
+		return a.t1.RoundTrip(req)
 	}
-	key := req.URL.Host
-	t.mu.Lock()
-	pc, ok := t.conns[key]
-	t.mu.Unlock()
-
-	if ok {
-		if pc.t2 != nil {
-			return pc.t2.RoundTrip(req)
-		}
-		if pc.t1 != nil {
-			return pc.t1.RoundTrip(req)
-		}
-	}
-
-	conn, err := dialUTLSInsecure(ctx, "tcp", canonicalAddr(req.URL), t.insecure)
-	if err != nil {
-		return nil, err
-	}
-	uconn, ok := conn.(*utls.UConn)
-	if !ok {
-		conn.Close()
-		return nil, fmt.Errorf("unexpected connection type %T", conn)
-	}
-	if uconn.ConnectionState().NegotiatedProtocol == "h2" {
-		t2 := newChromeH2Transport(func(context.Context, string, string, *tls.Config) (net.Conn, error) {
-			return conn, nil
+	if os.Getenv("PPLX_FRESH_CONN") == "1" {
+		// A/B experiment: fresh connection per request (the shape that
+		// measured 8/8 live passes).
+		t2 := newChromeH2Transport(func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return dialUTLS(ctx, network, addr)
 		})
-		pc = pooledConn{t2: &http2TransportShim{inner: t2}}
-	} else {
-		t1 := &http.Transport{DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
-			return conn, nil
-		}}
-		pc = pooledConn{t1: t1}
+		return t2.RoundTrip(req)
 	}
-	t.mu.Lock()
-	t.conns[key] = pc
-	t.mu.Unlock()
-	return pc.RoundTrip(req)
+	return a.t2.RoundTrip(req)
 }
 
-func (pc pooledConn) RoundTrip(req *http.Request) (*http.Response, error) {
-	if pc.t2 != nil {
-		return pc.t2.RoundTrip(req)
-	}
-	return pc.t1.RoundTrip(req)
-}
-
-func (t *utlsRoundTripper) CloseIdleConnections() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for _, pc := range t.conns {
-		if pc.t1 != nil {
-			pc.t1.CloseIdleConnections()
-		}
-	}
-	t.conns = map[string]pooledConn{}
+func (a *alpnRoundTripper) CloseIdleConnections() {
+	a.t2.CloseIdleConnections()
+	a.t1.CloseIdleConnections()
 }
 
 func dialUTLS(ctx context.Context, network, addr string) (net.Conn, error) {
-	return dialUTLSInsecure(ctx, network, addr, false)
+	return dialUTLSOpt(ctx, network, addr, false)
 }
 
 func canonicalAddr(u *url.URL) string {
@@ -132,23 +84,24 @@ func canonicalAddr(u *url.URL) string {
 // against an arbitrary base URL with certificate verification disabled, for
 // wire-frame probing against a local sink.
 func NewDebugTransport(baseURL string) *http.Client {
+	t2 := newChromeH2Transport(func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+		return dialUTLSOpt(ctx, network, addr, true)
+	})
+	t1 := &http.Transport{DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dialUTLSOpt(ctx, network, addr, true)
+	}}
+	_ = t1
 	return &http.Client{
-		Transport: &debugRoundTripper{base: baseURL},
+		Transport: &debugRT{t2: t2},
 		Timeout:   10 * time.Second,
 	}
 }
 
-type debugRoundTripper struct{ base string }
+type debugRT struct{ t2 *http2.Transport }
 
-func (d *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	rt := &utlsRoundTripper{conns: map[string]pooledConn{}, insecure: true}
-	return rt.RoundTrip(req)
-}
+func (d *debugRT) RoundTrip(req *http.Request) (*http.Response, error) { return d.t2.RoundTrip(req) }
 
-func dialUTLSInsecure(ctx context.Context, network, addr string, insecure bool) (net.Conn, error) {
-	if !insecure {
-		return dialUTLS(ctx, network, addr)
-	}
+func dialUTLSOpt(ctx context.Context, network, addr string, insecure bool) (net.Conn, error) {
 	d := net.Dialer{}
 	conn, err := d.DialContext(ctx, network, addr)
 	if err != nil {
@@ -159,8 +112,13 @@ func dialUTLSInsecure(ctx context.Context, network, addr string, insecure bool) 
 		conn.Close()
 		return nil, err
 	}
-	cfg := &utls.Config{ServerName: host, InsecureSkipVerify: true, NextProtos: []string{"h2"}}
+	cfg := &utls.Config{ServerName: host}
+	if insecure {
+		cfg.InsecureSkipVerify = true
+		cfg.NextProtos = []string{"h2"}
+	}
 	tlsConn := utls.UClient(conn, cfg, utls.HelloChrome_Auto)
+	applyChromeHello(tlsConn)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		conn.Close()
 		return nil, err

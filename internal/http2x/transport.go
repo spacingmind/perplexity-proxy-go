@@ -551,6 +551,10 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool, internalStateHook 
 			Setting{ID: SettingInitialWindowSize, Val: 6291456},
 			Setting{ID: SettingMaxHeaderListSize, Val: 262144},
 		)
+		// No stream-0 WINDOW_UPDATE means the connection window really is
+		// the spec default 65535; the internal accounting must match or
+		// WINDOW_UPDATEs exceed the real window (server: FLOW_CONTROL_ERROR).
+		cc.inflow.init(65535)
 	} else {
 		cc.fr.WriteSettings(initialSettings...)
 		cc.fr.WriteWindowUpdate(0, uint32(conf.MaxUploadBufferPerConnection))

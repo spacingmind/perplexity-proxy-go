@@ -2,6 +2,8 @@ package transport
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -204,7 +206,11 @@ func (c *shared) post(ctx context.Context, path string, body any, headers map[st
 	if err != nil {
 		return nil, err
 	}
-	return c.http.Do(req)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return decompressBody(resp)
 }
 
 func (c *shared) do(ctx context.Context, method, path string, headers map[string]string, r io.Reader) (*http.Response, error) {
@@ -212,7 +218,39 @@ func (c *shared) do(ctx context.Context, method, path string, headers map[string
 	if err != nil {
 		return nil, err
 	}
-	return c.http.Do(req)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return decompressBody(resp)
+}
+
+// decompressBody wraps resp.Body to undo Content-Encoding when the server
+// compresses a response. We advertise a full browser-style Accept-Encoding
+// (to match the fingerprint real Chrome/curl_cffi present), so — unlike
+// Go's stdlib transports, which only auto-decompress when they picked
+// "gzip" themselves — we own decoding whatever the server chose.
+func decompressBody(resp *http.Response) (*http.Response, error) {
+	switch strings.ToLower(resp.Header.Get("Content-Encoding")) {
+	case "gzip":
+		zr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("gzip response: %w", err)
+		}
+		resp.Body = readCloser{zr, resp.Body}
+	case "deflate":
+		fr := flate.NewReader(resp.Body)
+		resp.Body = readCloser{fr, resp.Body}
+	}
+	return resp, nil
+}
+
+// readCloser pairs a decompressing Reader with the underlying Closer so
+// closing the response body also closes the network connection's reader.
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
 
 func (c *shared) newRequest(ctx context.Context, method, path string, headers map[string]string, r io.Reader) (*http.Request, error) {
@@ -262,6 +300,7 @@ func (c *shared) appHeaders() map[string]string {
 		"Origin":             c.baseURL.String(),
 		"Accept":             c.opt.Accept,
 		"Accept-Language":    "en-US,en;q=0.9",
+		"Accept-Encoding":    "gzip, deflate, br, zstd",
 		"Content-Type":       c.opt.ContentType,
 		"sec-ch-ua":          "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"",
 		"Priority":           "u=0, i",
