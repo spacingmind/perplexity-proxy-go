@@ -41,6 +41,9 @@ func run(args []string) error {
 		return cmdLogin(rest)
 	case "ask":
 		return cmdAsk(rest)
+	case "version", "--version", "-v":
+		fmt.Println(Version)
+		return nil
 	case "bridge":
 		if len(rest) > 0 && rest[0] == "setup" {
 			return cmdBridgeSetup(rest[1:])

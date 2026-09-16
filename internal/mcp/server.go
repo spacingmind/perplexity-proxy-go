@@ -84,6 +84,17 @@ const (
 
 var null = json.RawMessage("null")
 
+// mcpVersion is set by cmd/pplx from Version (release-please bump target);
+// defaults to the last known release.
+var mcpVersion = "0.1.0"
+
+// SetVersion wires the CLI version into the MCP serverInfo response.
+func SetVersion(v string) {
+	if v != "" {
+		mcpVersion = v
+	}
+}
+
 var errInvalidParams = errors.New("invalid params")
 
 func (s *Server) handleLine(ctx context.Context, line []byte) *rpcResponse {
@@ -112,7 +123,7 @@ func (s *Server) dispatch(ctx context.Context, method string, params json.RawMes
 		return map[string]any{
 			"protocolVersion": protocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "pplx", "version": "0.1.0"},
+			"serverInfo":      map[string]any{"name": "pplx", "version": mcpVersion},
 		}, nil
 	case "ping":
 		return map[string]any{}, nil

@@ -14,6 +14,7 @@ import (
 // commands: effective spec, session token from the store, utls transport.
 // Logs must go to stderr only — stdout is the protocol channel.
 func cmdMCP(args []string) error {
+	mcp.SetVersion(Version)
 	if len(args) > 0 {
 		return errors.New("usage: pplx mcp")
 	}

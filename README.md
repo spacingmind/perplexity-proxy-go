@@ -1,7 +1,13 @@
 # perplexity-proxy-go
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Go port of [perplexity-web-mcp](https://github.com/jacob-bd/perplexity-web-mcp):
 use a Perplexity Pro subscription from the terminal via the unofficial web API.
+
+> Unofficial, not affiliated with or endorsed by Perplexity AI. Uses
+> undocumented web APIs that may change or break without notice; use at
+> your own risk and in compliance with Perplexity's terms of service.
 
 ## Build
 

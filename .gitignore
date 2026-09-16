@@ -1,3 +1,4 @@
 /pplx
 *.test
 dist/
+bin/

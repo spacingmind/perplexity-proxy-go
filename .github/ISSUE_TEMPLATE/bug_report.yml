@@ -1,0 +1,30 @@
+name: Bug report
+description: Something doesn't work
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also include the exact command you ran and (redacted) output.
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: e.g. v0.1.0 or commit hash
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        For ask/fingerprint issues: note whether the failure is an authwall
+        ("Sign up and repeat your request."), a TLS handshake failure, or
+        something else. Do NOT paste session tokens.
